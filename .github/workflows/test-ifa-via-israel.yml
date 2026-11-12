@@ -1,0 +1,41 @@
+name: Test IFA access via Israeli proxy
+
+# Runs only when started manually (Actions tab -> this workflow -> Run workflow).
+# Needs a repository secret named IL_PROXY in the form http://USER:PASS@HOST:PORT
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check that the proxy secret exists
+        env:
+          IL_PROXY: ${{ secrets.IL_PROXY }}
+        run: |
+          if [ -z "$IL_PROXY" ]; then echo "MISSING SECRET IL_PROXY"; exit 1; fi
+          echo "Secret found"
+
+      - name: Which country does the proxy exit from
+        continue-on-error: true
+        env:
+          IL_PROXY: ${{ secrets.IL_PROXY }}
+        run: |
+          echo "EXIT COUNTRY: $(curl -s -x "$IL_PROXY" --max-time 30 https://ipinfo.io/country)"
+
+      - name: Simple HTTP request through the proxy
+        continue-on-error: true
+        env:
+          IL_PROXY: ${{ secrets.IL_PROXY }}
+        run: |
+          UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+          for url in \
+            "https://www.football.org.il/players/player/?player_id=240441" \
+            "https://www.football.org.il/team-details/team-games?team_id=4117&&season_id=28" \
+            "https://www.football.org.il/leagues/games/game/?season_id=28&game_id=1127170"; do
+            code=$(curl -s -L -x "$IL_PROXY" --max-time 45 -A "$UA" -H "Accept-Language: he-IL,he;q=0.9" -o page.html -w "%{http_code}" "$url")
+            size=$(wc -c < page.html)
+            found=$(grep -c "בני סכנין" page.html || true)
+            echo "PROXY-CURL | $code | bytes=$size | matches=$found | $url"
+          done
