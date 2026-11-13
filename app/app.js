@@ -275,23 +275,36 @@ const isCurrentSeason = (p) => curSid(p) === p.current_season_id;
 
 async function tabInfo(p) {
   const { data: contacts } = await sb.from('contacts').select('*').eq('player_id', p.id);
-  const hist = S.seasons.find((s) => s.player_id === p.id && s.season_id === (S.ui.season || p.current_season_id));
+  const sid = curSid(p), cx = seasonCtx(p, sid);
+  const hist = cx.row;
+  // details of the selected season (past seasons: from that season's games)
+  let team = p.team_name, league = p.league_name, coach = p.coach_name, shirt = p.shirt_number;
+  if (!cx.current) {
+    team = hist?.team_name || ''; league = hist?.league_name || '';
+    const gs = teamGames(p, sid).filter((g) => g.home_coach || g.away_coach);
+    const last = gs[gs.length - 1];
+    coach = last ? (perspective(p, last).home ? last.home_coach : last.away_coach) || '' : '';
+    const cnt = {};
+    for (const g of teamGames(p, sid)) { const gp = S.gp.find((x) => x.game_id === g.id && x.player_id === p.id); if (gp && gp.shirt_number) cnt[gp.shirt_number] = (cnt[gp.shirt_number] || 0) + 1; }
+    shirt = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  }
   const manual = (v) => v ? `<span style="font-weight:600">${esc(v)}</span>` : '<span style="color:var(--amber);font-weight:600">להזנה</span>';
   return `<div class="stack">
+    <div class="card" style="padding:14px">${seasonSelect(p)}</div>
     <div class="card">
       <div class="row"><span class="muted">שנת לידה</span><b>${esc(p.birth_month_year || '')}</b></div>
       <div class="row"><span class="muted">תאריך לידה מלא</span>${manual(p.birth_date && p.birth_date.split('-').reverse().join('/'))}</div>
-      <div class="row"><span class="muted">קבוצה</span><b>${esc(p.team_name || '')}</b></div>
-      <div class="row"><span class="muted">ליגה</span><b>${esc(p.league_name || '')}</b></div>
-      <div class="row"><span class="muted">מאמן</span><b>${esc(p.coach_name || '')}</b></div>
+      <div class="row"><span class="muted">קבוצה</span><b>${esc(team || '')}</b></div>
+      <div class="row"><span class="muted">ליגה</span><b>${esc(league || '')}</b></div>
+      <div class="row"><span class="muted">מאמן</span><b>${esc(coach || '-')}</b></div>
       <div class="row"><span class="muted">עמדה</span>${manual(p.position)}</div>
       <div class="row"><span class="muted">רגל חזקה</span>${manual(p.strong_foot)}</div>
-      <div class="row"><span class="muted">מספר חולצה</span><b>${esc(p.shirt_number || '')}</b></div>
+      <div class="row"><span class="muted">מספר חולצה</span><b>${esc(shirt || '-')}</b></div>
       <div class="row"><span class="muted">אזרחות</span><b>${esc(p.citizenship || '')}</b></div>
     </div>
     <button class="btn2" data-act="editInfo" data-id="${p.id}">עריכת פרטים ידניים</button>
-    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">${seasonSelect(p)}
-      <div style="font-size:14px;line-height:1.5"><span class="muted">נתוני השחקן בקבוצה: </span><b>${esc(hist ? `${hist.team_name} (${hist.league_name})` : '')}</b>${hist && hist.goals != null ? ` · ${hist.goals} שערים` : ''}</div></div>
+    <p class="sec">היסטוריית קבוצות</p>
+    <div class="card">${S.seasons.filter((x) => x.player_id === p.id).map((x) => `<div class="row" style="${x.season_id === sid ? 'background:rgba(200,240,60,.10)' : ''}"><span class="muted">${esc(x.season_label || x.season_id)}</span><span style="text-align:left"><b>${esc(x.team_name || '')}</b> <span class="muted" style="font-size:12px">${esc(x.league_name || '')}</span></span></div>`).join('')}</div>
     <p class="sec">אנשי קשר</p>
     <div class="card">${(contacts || []).map((c) => `<div class="row"><span>${esc(c.role)} · ${esc(c.name || '')}</span><span style="display:flex;gap:6px">
       ${c.phone ? `<a class="btn2" style="display:flex;align-items:center;text-decoration:none;color:inherit" href="tel:${esc(c.phone)}">חיוג</a><a class="btn2" style="display:flex;align-items:center;text-decoration:none;color:inherit" href="https://wa.me/${esc(c.phone.replace(/\D/g, '').replace(/^0/, '972'))}">וואטסאפ</a>` : ''}</span></div>`).join('') || '<div class="row muted">אין אנשי קשר</div>'}</div>
