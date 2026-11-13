@@ -133,6 +133,9 @@ class PlayerProfile:
     league_name: str = ""
     seasons: list[tuple[int, str]] = field(default_factory=list)  # (season_id, label)
     goals_total: Optional[int] = None
+    goals_by: dict = field(default_factory=dict)   # league / cup / toto / all
+    yellow_cards: Optional[int] = None             # league+state cup + toto
+    red_cards: Optional[int] = None
 
 
 def parse_player_page(html: str) -> PlayerProfile:
@@ -161,6 +164,21 @@ def parse_player_page(html: str) -> PlayerProfile:
         cols = row.select(".table_col")
         if len(cols) >= 2 and _text(cols[0]) == "הכל":
             p.goals_total = _int(_text(cols[1]))
+        if len(cols) >= 2:
+            k = _text(cols[0])
+            key = "all" if k == "הכל" else "league" if k == "ליגה" else "cup" if "המדינה" in k else "toto" if "טוטו" in k else k
+            p.goals_by[key] = _int(_text(cols[1]))
+    yellow = 0
+    for row in soup.select(".pl-team-cards .table_row"):
+        cols = row.select(".table_col")
+        if len(cols) < 2:
+            continue
+        k, n = _text(cols[0]), _int(_text(cols[1])) or 0
+        if "צהוב" in k:
+            yellow += n
+            p.yellow_cards = yellow
+        elif "אדום" in k:
+            p.red_cards = n
     return p
 
 
