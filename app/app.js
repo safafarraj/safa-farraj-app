@@ -333,7 +333,7 @@ function minutesDesc(gp, L) {
   if (gp.minute_out) parts.push(`${ARROW_OUT} יצא ${gp.minute_out}'`);
   if (gp.status === 'bench') parts.push('בסגל, לא שותף');
   if (gp.status === 'not_in_squad') parts.push('לא בסגל');
-  if (gp.status === 'starter' || gp.status === 'sub_in') parts.push(`${gp.minutes} דק'`);
+  if ((gp.status === 'starter' && !gp.minute_out) || gp.status === 'sub_in') parts.push(`${gp.minutes} דק'`);  // started and subbed off: the exit minute says it all
   return parts.join(' · ');
 }
 function minutesShort(gp) {
