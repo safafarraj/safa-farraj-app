@@ -349,15 +349,18 @@ actions.gameList = async (el) => {
   if (el.dataset.kind === 'goals' && rows.length) ev = (await sb.from('game_events').select('game_id,minute,event_type').eq('player_id', p.id).in('event_type', ['goal', 'penalty_goal']).in('game_id', rows.map((r) => r.g.id))).data || [];
   const goalMins = (gid) => ev.filter((e) => e.game_id === gid).sort((a, b) => a.minute - b.minute).map((e) => `${e.minute}'${e.event_type === 'penalty_goal' ? ' (פ)' : ''}`).join(', ');
   modal(`<div class="num" style="font-size:30px">${kind.title}</div>
-    <div class="muted" style="font-size:13px">${esc(p.name)} · ${rows.length} משחקים · לחיצה על שורה לפרטי המשחק</div>
-    <div class="card" style="overflow:hidden">
-      <div style="display:grid;grid-template-columns:1fr 66px 48px;gap:6px;padding:8px 12px;background:var(--bg);font-size:12px;font-weight:700" class="muted"><span>משחק</span><span>מועד</span><span>תוצאה</span></div>
-      ${rows.map(({ g, gp }) => { const v = perspective(p, g); const goals = el.dataset.kind === 'goals' ? ` · ⚽ ${goalMins(g.id)}` : (gp && gp.goals ? ` · ⚽×${gp.goals}` : ''); return `<button data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;display:grid;grid-template-columns:1fr 66px 48px;gap:6px;align-items:center;padding:10px 12px;border:0;border-top:1px solid var(--line);background:transparent">
-        <span style="min-width:0;display:flex;flex-direction:column;gap:3px">
-          <span style="display:flex;gap:6px;align-items:center;min-width:0"><span class="tag ${g.competition === 'cup' ? 'cup' : ''}">${g.competition === 'cup' ? 'גביע' : 'ליגה'}</span><span class="ell" style="font-size:13px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</span></span>
-          <span class="muted" style="font-size:11px">${minutesDesc(gp, L)}${goals}</span></span>
-        <span style="font-size:12px">יום ${dayName(g.game_date)}<br><span class="muted">${g.game_date.split('-').reverse().join('/')}</span></span>
-        <span style="text-align:center"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></span></button>`; }).join('') || '<div class="row muted">אין משחקים</div>'}
+    <div class="muted" style="font-size:13px">${esc(p.name)} · ${rows.length} משחקים · גלילה הצידה לכל הפרטים · לחיצה על שורה לפרטי המשחק</div>
+    <div class="card" style="overflow-x:auto">
+      <table style="border-collapse:collapse;white-space:nowrap;font-size:12.5px;min-width:100%">
+        <thead><tr class="muted" style="background:var(--bg);font-size:11.5px;text-align:right">
+          <th style="padding:8px 10px">מסגרת</th><th style="padding:8px 6px">משחק</th><th style="padding:8px 6px">מועד</th><th style="padding:8px 6px">תוצאה</th><th style="padding:8px 10px">דקות</th></tr></thead>
+        <tbody>${rows.map(({ g, gp }) => { const v = perspective(p, g); const goals = el.dataset.kind === 'goals' ? ` · ⚽ ${goalMins(g.id)}` : (gp && gp.goals ? ` · ⚽×${gp.goals}` : ''); return `<tr data-act="game" data-p="${p.id}" data-g="${g.id}" style="border-top:1px solid var(--line);cursor:pointer">
+          <td style="padding:10px"><span class="tag ${g.competition === 'cup' ? 'cup' : ''}">${g.competition === 'cup' ? 'גביע' : 'ליגה'}</span></td>
+          <td style="padding:10px 6px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</td>
+          <td style="padding:10px 6px">יום ${dayName(g.game_date)} ${g.game_date.split('-').reverse().join('/')}</td>
+          <td style="padding:10px 6px"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></td>
+          <td style="padding:10px">${minutesDesc(gp, L)}${goals}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted" style="padding:12px">אין משחקים</td></tr>'}</tbody>
+      </table>
     </div><button class="btn2" data-close>סגירה</button>`);
 };
 actions.toggleView = () => { S.ui.allView = !S.ui.allView; render(); };
