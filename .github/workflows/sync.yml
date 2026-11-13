@@ -1,0 +1,31 @@
+name: Sync IFA data
+
+on:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Full refresh (profiles, cup games, history)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ifa-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - run: pip install -q -r scraper/requirements.txt
+      - name: Sync
+        env:
+          IL_PROXY: ${{ secrets.IL_PROXY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python -m scraper.sync ${{ inputs.full && '--full' || '' }}
