@@ -1,6 +1,8 @@
 name: Sync IFA data
 
 on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes; the job itself decides what (if anything) to read
   workflow_dispatch:
     inputs:
       full:
@@ -11,6 +13,9 @@ on:
 concurrency:
   group: ifa-sync
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   sync:

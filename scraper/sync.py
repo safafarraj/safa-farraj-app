@@ -20,7 +20,7 @@ SEASON_LABEL = "2026/2027"
 
 
 def log(msg: str) -> None:
-    print(f"[{datetime.utcnow():%H:%M:%S}] {msg}", flush=True)
+    print(f"[{ifa.now_il():%H:%M:%S}] {msg}", flush=True)
 
 
 class Sync:
@@ -114,27 +114,42 @@ class Sync:
         return sched
 
     # ------------------------------------------------------------------
+    def _due(self, g: dict) -> bool:
+        """Decide whether a known game needs (re)reading now — keeps proxy traffic low."""
+        gd = date.fromisoformat(g["game_date"])
+        if gd > self.today:
+            return False
+        upd = datetime.fromisoformat(g["updated_at"].replace("Z", "+00:00")).astimezone(self.now.tzinfo)
+        age = self.now - upd
+        if g["details_complete"]:
+            return gd >= self.today - timedelta(days=2) and age > timedelta(hours=6)
+        if gd < self.today:
+            return gd >= self.today - timedelta(days=7) and age > timedelta(minutes=30)
+        # today
+        if g.get("kickoff_time"):
+            ko = datetime.combine(self.today, datetime.strptime(g["kickoff_time"][:5], "%H:%M").time(), self.now.tzinfo)
+            if ko - timedelta(minutes=45) <= self.now <= ko + timedelta(hours=4):
+                return True  # live window: every cycle (~10 min)
+            return self.now > ko and age > timedelta(minutes=30)
+        return 8 <= self.now.hour <= 23 and age > timedelta(minutes=60)
+
     def game_ids_to_fetch(self) -> dict[int, dict]:
-        """Map ifa_game_id -> context for games whose details we need."""
+        """Map ifa_game_id -> context for games whose details we need now."""
         team_ids = {p["ifa_team_id"] for p in self.players if p.get("ifa_team_id")}
         known = {g["ifa_game_id"]: g for g in self.db.select(
-            "games", f"season_id=eq.{SEASON_ID}&ifa_game_id=not.is.null&select=id,ifa_game_id,ifa_team_id,game_date,status,details_complete,competition")}
+            "games", f"season_id=eq.{SEASON_ID}&ifa_game_id=not.is.null&select=id,ifa_game_id,ifa_team_id,game_date,kickoff_time,status,details_complete,competition,updated_at")}
         wanted: dict[int, dict] = {}
-        recent = self.today - timedelta(days=2)
         for gid, g in known.items():
-            gd = date.fromisoformat(g["game_date"])
-            if g["ifa_team_id"] in team_ids and gd <= self.today and (not g["details_complete"] or gd >= recent):
+            if g["ifa_team_id"] in team_ids and (self.full and not g["details_complete"] and g["game_date"] <= self.today.isoformat() or self._due(g)):
                 wanted[gid] = {"team_id": g["ifa_team_id"], "competition": g["competition"]}
-        # cup / other games the players took part in (not in the league schedule)
-        for p in self.players:
-            if not self.full and self.initialized:
-                break  # the player game list only needs a refresh on full runs
-            for row in ifa.parse_player_games(self.client.player_games(p["ifa_player_id"], SEASON_ID)):
-                g = known.get(row.game_id)
-                if g is None or not g["details_complete"] or (row.game_date and row.game_date >= recent):
-                    wanted.setdefault(row.game_id, {"team_id": p.get("ifa_team_id"),
-                                                    "competition": "cup" if row.is_cup else "league",
-                                                    "competition_name": row.competition_name})
+        if self.full or not self.initialized:
+            # cup / other games the players took part in (not in the league schedule)
+            for p in self.players:
+                for row in ifa.parse_player_games(self.client.player_games(p["ifa_player_id"], SEASON_ID)):
+                    if row.game_id not in known or not known[row.game_id]["details_complete"]:
+                        wanted.setdefault(row.game_id, {"team_id": p.get("ifa_team_id"),
+                                                        "competition": "cup" if row.is_cup else "league",
+                                                        "competition_name": row.competition_name})
         return wanted
 
     def sync_games(self) -> None:
@@ -263,22 +278,40 @@ class Sync:
                 p["coach_name"] = coach
 
     # ------------------------------------------------------------------
+    def _older_than(self, key: str, delta: timedelta) -> bool:
+        v = self.db.get_state(key)
+        if not v:
+            return True
+        return self.now - datetime.fromisoformat(v).astimezone(self.now.tzinfo) > delta
+
     def run(self) -> None:
-        if self.full or not self.initialized:
+        # once a day (from 05:00) do a full refresh of profiles, history and cup games
+        if not self.full and (not self.initialized or (self.now.hour >= 5 and self._older_than("last_full", timedelta(hours=20)))):
+            self.full = True
+        if self.full:
             self.sync_profiles()
-        teams = {(p["ifa_team_id"], p.get("ifa_league_id")) for p in self.players if p.get("ifa_team_id")}
-        for team_id, league_id in teams:
-            self.sync_team(team_id, league_id)
-        # process games in date order so coach-change detection sees them chronologically
+        game_day = bool(self.db.select("games", f"game_date=eq.{self.today}&select=id&limit=1"))
+        if self.full or self._older_than("last_schedule", timedelta(hours=1 if game_day else 6)):
+            teams = {(p["ifa_team_id"], p.get("ifa_league_id")) for p in self.players if p.get("ifa_team_id")}
+            for team_id, league_id in teams:
+                self.sync_team(team_id, league_id)
+            self.db.set_state("last_schedule", self.now.isoformat())
         self.sync_games()
+        if self.full:
+            self.db.set_state("last_full", self.now.isoformat())
         if not self.initialized:
             self.db.set_state("initialized", True)
             log("first run: back-fill done, alerts enabled from now on")
+        else:
+            from .alerts import Alerts
+            Alerts(self.db, self.now, self.notify).run()
+        from .alerts import send_pushes
+        pushed = send_pushes(self.db)
         self.db.set_state("last_sync", {"at": datetime.utcnow().isoformat(), "full": self.full,
                                         "requests": self.client.requests_made,
                                         "kb": round(self.client.bytes_received / 1024)})
-        log(f"done · requests={self.client.requests_made} · traffic={self.client.bytes_received / 1024:.0f}KB"
-            f" · new notifications={self.new_notifications}")
+        log(f"done · full={self.full} · requests={self.client.requests_made} · traffic={self.client.bytes_received / 1024:.0f}KB"
+            f" · new notifications={self.new_notifications} · pushes={pushed}")
 
 
 def main(argv: list[str]) -> int:
