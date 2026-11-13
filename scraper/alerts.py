@@ -203,6 +203,8 @@ def send_pushes(db: DB) -> int:
                     sent += 1
                 except WebPushException as e:
                     code = getattr(e.response, "status_code", None)
+                    body = getattr(e.response, "text", "")[:200] if e.response is not None else str(e)[:200]
+                    print(f"push failed: status={code} {body}")
                     if code in (404, 410):  # subscription expired / removed on the phone
                         db.delete("push_subscriptions", f"id=eq.{s['id']}")
     ids = ",".join(str(n["id"]) for n in pending)
