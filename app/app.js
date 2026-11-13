@@ -642,24 +642,26 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   const aud = m[1] || S.ui.aud || 'mine'; S.ui.aud = aud;
   const today = todayIso();
   const ps = S.players.filter((p) => p.kind === aud);
-  const items = [];
-  for (const p of ps) for (const g of teamGames(p)) if (g.game_date >= today) items.push({ p, g });
-  items.sort((a, b) => (a.g.game_date + (a.g.kickoff_time || '')).localeCompare(b.g.game_date + (b.g.kickoff_time || '')));
-  // the coming weekend (Fri–Sat)
-  const d = new Date(today + 'T12:00:00'); const fri = new Date(d); fri.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7));
-  const sat = new Date(fri); sat.setDate(fri.getDate() + 1);
-  const iso = (x) => x.toISOString().slice(0, 10);
-  const weekend = items.filter((x) => x.g.game_date >= iso(fri) && x.g.game_date <= iso(sat));
-  const row = ({ p, g }) => { const v = perspective(p, g); return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
+  // the round of the coming weekend: Friday–Sunday (a Sunday game belongs to the same round; midweek games are not shown here)
+  const d = new Date(today + 'T12:00:00'); const dow = d.getDay();
+  const fri = new Date(d); fri.setDate(d.getDate() + (dow === 0 ? -2 : dow === 6 ? -1 : 5 - dow));
+  const sun = new Date(fri); sun.setDate(fri.getDate() + 2);
+  const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  const weekend = [];
+  for (const p of ps) for (const g of teamGames(p)) if (g.game_date >= iso(fri) && g.game_date <= iso(sun)) weekend.push({ p, g });
+  weekend.sort((a, b) => (a.g.game_date + (a.g.kickoff_time || '')).localeCompare(b.g.game_date + (b.g.kickoff_time || '')));
+  const noGame = ps.filter((p) => !weekend.some((x) => x.p.id === p.id));
+  const row = ({ p, g }) => { const v = perspective(p, g); const fin = g.status === 'final' && g.home_score != null; return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
       <div style="width:44px;text-align:center;flex-shrink:0"><div class="num" style="font-size:22px;color:var(--lime)">${fmtDate(g.game_date)}</div><div class="muted" style="font-size:10px">יום ${dayName(g.game_date)}</div></div>
       <div style="flex:1;min-width:0"><div class="ell" style="font-size:13px;font-weight:800">${esc(p.name)} · נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'})</div>
-      <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'שעה טרם נקבעה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div></button>`; };
+      <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'שעה טרם נקבעה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div>
+      ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : ''}</button>`; };
   shell('לוח משחקים', `<div class="stack">
     <div class="seg"><button class="${aud === 'mine' ? 'on' : ''}" data-go="#/schedule?aud=mine">שחקנים שלי</button><button class="${aud === 'tracked' ? 'on' : ''}" data-go="#/schedule?aud=tracked">שחקנים במעקב</button></div>
-    <div class="card" style="padding:12px 14px;font-size:14px">סוף השבוע ${fmtDate(iso(fri))}–${fmtDate(iso(sat))}: ${weekend.length ? `<b style="color:var(--lime)">${weekend.length} משחקים</b>` : '<b style="color:var(--lime)">אין משחקים</b>'}</div>
+    <div class="card" style="padding:12px 14px;font-size:14px">מחזור סוף השבוע · שישי ${fmtDate(iso(fri))} – ראשון ${fmtDate(iso(sun))}: <b style="color:var(--lime)">${weekend.length ? weekend.length + ' משחקים' : 'אין משחקים'}</b></div>
     ${weekend.length ? `<div class="card" style="overflow:hidden">${weekend.map(row).join('')}</div>` : ''}
-    <p class="sec">המשחקים הקרובים</p>
-    <div class="card" style="overflow:hidden">${items.slice(0, 12).map(row).join('') || '<div class="row muted">אין משחקים בלוח</div>'}</div>
+    ${noGame.length && ps.length ? `<div class="muted" style="font-size:12px">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
+    <div class="muted" style="font-size:12px">משחקים עתידיים נוספים מופיעים בפרופיל של כל שחקן</div>
   </div>`, { tab: 'schedule' });
 });
 
