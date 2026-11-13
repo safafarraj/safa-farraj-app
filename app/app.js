@@ -90,13 +90,14 @@ function stats(p, sid) {
   const L = gameLength(p, sid);
   const finals = teamGames(p, sid).filter((g) => g.status === 'final');
   const rows = finals.map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) }));
-  const noMinutes = rows.some((r) => r.gp && r.gp.status === 'played');
-  const counted = rows.filter((r) => !(r.gp && r.gp.excluded_from_contract));
+  const unknown = rows.filter((r) => r.gp && r.gp.status === 'played').length;  // children leagues: took part, minutes not published
+  const noMinutes = unknown > 0 && !rows.some((r) => r.gp && (r.gp.status === 'starter' || r.gp.status === 'sub_in'));
+  const counted = rows.filter((r) => !(r.gp && (r.gp.excluded_from_contract || r.gp.status === 'played')));
   const played = counted.reduce((a, r) => a + (r.gp ? r.gp.minutes : 0), 0);
   const possible = noMinutes ? 0 : counted.length * L;
   const sum = (k) => rows.reduce((a, r) => a + (r.gp ? r.gp[k] || 0 : 0), 0);
   return {
-    L, rows, played, possible, noMinutes, pct: possible ? (100 * played) / possible : null,
+    L, rows, played, possible, noMinutes, unknown, pct: possible ? (100 * played) / possible : null,
     starts: rows.filter((r) => r.gp && (r.gp.status === 'starter' || r.gp.status === 'played')).length,
     subs: rows.filter((r) => r.gp && r.gp.status === 'sub_in').length,
     unused: rows.filter((r) => !r.gp || r.gp.status === 'bench' || r.gp.status === 'not_in_squad').length,
@@ -458,9 +459,9 @@ async function tabStats(p) {
   const sid = curSid(p), cx = seasonCtx(p, sid);
   const s = stats(p, sid);
   if (!cx.current && cx.row) {  // IFA season totals (cover games without published line-ups too)
-    if (cx.row.goals != null) s.goals = Math.max(s.goals, cx.row.goals);
-    if (cx.row.yellow_cards != null) s.yellow = Math.max(s.yellow, cx.row.yellow_cards);
-    if (cx.row.red_cards != null) s.red = Math.max(s.red, cx.row.red_cards);
+    if (cx.row.goals != null) s.goals = cx.row.goals;
+    if (cx.row.yellow_cards != null) s.yellow = cx.row.yellow_cards;
+    if (cx.row.red_cards != null) s.red = cx.row.red_cards;
   }
   const { data: cs } = await sb.from('contracts').select('*').eq('player_id', p.id).eq('contract_type', 'club').order('end_date', { ascending: false }).limit(1);
   const c = cx.current && cs && cs[0]; const commit = c && c.minutes_commitment_pct != null ? +c.minutes_commitment_pct : null;
@@ -473,7 +474,7 @@ async function tabStats(p) {
     ${cx.current ? '' : `<div class="card" style="padding:12px 14px;font-size:14px">${esc(cx.row?.team_name || '')} · <span class="muted">${esc(cx.row?.league_name || '')}</span>${!cx.row?.backfilled_at ? '<div class="muted" style="font-size:13px;margin-top:6px">הנתונים של עונה זו בטעינה</div>' : s.games && !s.lineups ? '<div class="muted" style="font-size:13px;margin-top:6px">בעונה זו לא פורסמו הרכבים באתר ההתאחדות, לכן אין נתוני דקות. שערים וכרטיסים לפי סיכום העונה באתר.</div>' : ''}</div>`}
     <div class="card pitch" style="padding:18px;display:flex;flex-direction:column;gap:10px">
       <div class="sec">דקות משחק · ליגה + גביע</div>
-      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><span class="num" style="font-size:64px;color:${color}">${s.pct == null ? '–' : s.pct.toFixed(1) + '%'}</span><span class="muted" style="font-size:14px;padding-bottom:10px">${s.noMinutes ? 'באתר ההתאחדות לא פורסמו דקות משחק לעונה זו (ליגת ילדים) · מוצגת השתתפות בלבד' : `${s.played} / ${s.possible} דק׳`}</span></div>
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><span class="num" style="font-size:64px;color:${color}">${s.pct == null ? '–' : s.pct.toFixed(1) + '%'}</span><span class="muted" style="font-size:14px;padding-bottom:10px">${s.noMinutes ? 'באתר ההתאחדות לא פורסמו דקות משחק לעונה זו (ליגת ילדים) · מוצגת השתתפות בלבד' : `${s.played} / ${s.possible} דק׳${s.unknown ? ` · ${s.unknown} משחקים בלי נתוני דקות לא נכללו` : ''}`}</span></div>
       ${commit == null ? !cx.current ? '' : '<div class="muted" style="font-size:13px">אין עדיין חוזה מועדון עם התחייבות לדקות. הצבע יופיע אחרי הזנת החוזה.</div>'
       : `<div style="font-weight:700;font-size:14px;color:${color}">${ok ? 'עומד בהתחייבות החוזה' : 'לא עומד בהתחייבות החוזה'} (${gap})</div>
         <div style="height:12px;border-radius:6px;background:rgba(255,255,255,.08);position:relative;overflow:hidden"><div style="position:absolute;top:0;bottom:0;right:0;width:${Math.min(100, s.pct || 0)}%;background:${color}"></div><div style="position:absolute;top:0;bottom:0;right:${commit}%;width:2px;background:var(--ink)"></div></div>
