@@ -367,7 +367,7 @@ actions.gameList = async (el) => {
           <td style="padding:10px;text-align:center"><span class="tag ${g.competition === 'cup' ? 'cup' : ''}">${g.competition === 'cup' ? 'ג' : 'ל'}</span></td>
           <td style="padding:10px 6px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</td>
           <td style="padding:10px 6px">יום ${dayName(g.game_date)} ${g.game_date.split('-').reverse().join('/')}</td>
-          <td style="padding:10px 6px"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></td>
+          <td style="padding:10px 6px"><span class="pill ${v.res}" dir="ltr">${g.away_score} : ${g.home_score}</span></td>
           <td style="padding:10px">${minutesDesc(gp, L)}${goals}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted" style="padding:12px">אין משחקים</td></tr>'}</tbody>
       </table>
     </div><button class="btn2" data-close>סגירה</button>`);
