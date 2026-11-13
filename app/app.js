@@ -86,7 +86,7 @@ window.addEventListener('hashchange', render);
 function shell(title, body, { back = false, tab = 'home' } = {}) {
   $app.innerHTML = `
   <header class="top">
-    ${back ? `<button class="icon" aria-label="חזרה" data-act="back">${ICON.back}</button>` : ''}
+    ${back ? `<button class="icon" aria-label="חזרה" data-act="back" data-to="${typeof back === 'string' ? back : ''}">${ICON.back}</button>` : ''}
     ${ICON.logo}
     <div class="title num ell">${esc(title)}</div>
     <button class="icon" aria-label="מרכז התראות" data-go="#/alerts">${ICON.bell}${S.unread ? `<span class="badge">${S.unread > 99 ? '99+' : S.unread}</span>` : ''}</button>
@@ -103,7 +103,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-go],[data-act]');
   if (!el) return;
   if (el.dataset.go) { e.preventDefault(); go(el.dataset.go); return; }
-  if (el.dataset.act === 'back') { history.length > 1 ? history.back() : go('#/'); return; }
+  if (el.dataset.act === 'back') { if (el.dataset.to) location.replace(el.dataset.to); else history.length > 1 ? history.back() : go('#/'); return; }
   const fn = actions[el.dataset.act];
   if (fn) { e.preventDefault(); fn(el); }
 });
@@ -172,8 +172,9 @@ route(/^\/mine$/, () => {
   shell('שחקנים שלי', `<div class="stack">
     <div class="scroll-x">${groups.map((g) => `<button class="chip ${g === cur ? 'on' : ''}" data-act="group" data-g="${esc(g)}">${esc(g)} · ${mine.filter((p) => (p.age_group || 'אחר') === g).length}</button>`).join('')}</div>
     ${mine.filter((p) => (p.age_group || 'אחר') === cur).map(playerCard).join('') || '<div class="muted">אין שחקנים.</div>'}
-  </div>`, { back: true });
+  </div>`, { back: '#/' });
 });
+actions.tab = (el) => { location.replace(el.dataset.to); };
 actions.group = (el) => { S.ui.group = el.dataset.g; render(); };
 
 function playerCard(p) {
@@ -227,9 +228,9 @@ route(/^\/player\/(\d+)(?:\/(\w+))?$/, async (m) => {
         <div style="font-size:14px;font-weight:600">${esc(p.team_name || '')}</div>
         <div class="muted" style="font-size:12px">${esc(p.league_name || '')}</div></div>
     </div>
-    <div class="scroll-x" style="margin:0 -16px;padding:0 16px">${TABS.map(([k, l]) => `<button class="chip ${k === tab ? 'on' : ''}" data-go="#/player/${p.id}/${k}">${l}</button>`).join('')}</div>
+    <div class="scroll-x" style="margin:0 -16px;padding:0 16px">${TABS.map(([k, l]) => `<button class="chip ${k === tab ? 'on' : ''}" data-act="tab" data-to="#/player/${p.id}/${k}">${l}</button>`).join('')}</div>
     <div id="tab"><div class="spinner"></div></div>
-  </div>`, { back: true });
+  </div>`, { back: p.kind === 'tracked' ? '#/tracked' : '#/mine' });
   const el = document.getElementById('tab');
   el.innerHTML = await ({ info: tabInfo, games: tabGames, stats: tabStats, contracts: tabContracts, media: tabMedia, notes: tabNotes }[tab] || tabInfo)(p);
 });
