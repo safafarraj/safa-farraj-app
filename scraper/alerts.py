@@ -190,7 +190,9 @@ def send_pushes(db: DB) -> int:
     sent = 0
     if subs:
         from pywebpush import webpush, WebPushException
-        priv, _ = ensure_vapid(db)
+        from py_vapid import Vapid01
+        priv_pem, _ = ensure_vapid(db)
+        priv = Vapid01.from_pem(priv_pem.encode())
         for n in pending:
             payload = json.dumps({"title": n["title"], "body": n.get("body") or "", "url": n.get("url") or "/",
                                   "tag": n.get("dedupe_key") or str(n["id"])}, ensure_ascii=False)
