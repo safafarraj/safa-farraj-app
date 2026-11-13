@@ -658,7 +658,7 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
       ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : ''}</button>`; };
   shell('לוח משחקים', `<div class="stack">
     <div class="seg"><button class="${aud === 'mine' ? 'on' : ''}" data-go="#/schedule?aud=mine">שחקנים שלי</button><button class="${aud === 'tracked' ? 'on' : ''}" data-go="#/schedule?aud=tracked">שחקנים במעקב</button></div>
-    <div class="card" style="padding:12px 14px;font-size:14px">מחזור סוף השבוע · שישי ${fmtDate(iso(fri))} – ראשון ${fmtDate(iso(sun))}: <b style="color:var(--lime)">${weekend.length ? weekend.length + ' משחקים' : 'אין משחקים'}</b></div>
+    <div class="card" style="padding:12px 14px;font-size:14px">${weekend.length ? (() => { const f = weekend[0].g.game_date, l = weekend[weekend.length - 1].g.game_date; return `מחזור סוף השבוע · ${f === l ? `יום ${dayName(f)} ${fmtDate(f)}` : `מיום ${dayName(f)} ${fmtDate(f)} עד יום ${dayName(l)} ${fmtDate(l)}`}: <b style="color:var(--lime)">${weekend.length} משחקים</b>`; })() : `מחזור סוף השבוע: <b style="color:var(--lime)">אין משחקים</b>`}</div>
     ${weekend.length ? `<div class="card" style="overflow:hidden">${weekend.map(row).join('')}</div>` : ''}
     ${noGame.length && ps.length ? `<div class="muted" style="font-size:12px">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
     <div class="muted" style="font-size:12px">משחקים עתידיים נוספים מופיעים בפרופיל של כל שחקן</div>
