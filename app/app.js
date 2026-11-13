@@ -323,6 +323,21 @@ async function tabGames(p) {
       : `<div class="grid2" style="gap:6px;align-items:start">${col('ליגה', league)}${col('גביע', cup)}</div>`}
   </div>`;
 }
+actions.goalsList = async (el) => {
+  const p = playerById(el.dataset.p);
+  const rows = teamGames(p).filter((g) => g.status === 'final').map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) })).filter((r) => r.gp && r.gp.goals > 0);
+  const { data: ev } = rows.length ? await sb.from('game_events').select('game_id,minute,event_type').eq('player_id', p.id).in('event_type', ['goal', 'penalty_goal']).in('game_id', rows.map((r) => r.g.id)) : { data: [] };
+  const mins = (gid) => (ev || []).filter((e) => e.game_id === gid).sort((a, b) => a.minute - b.minute).map((e) => `${e.minute}'${e.event_type === 'penalty_goal' ? ' (פ)' : ''}`).join(', ');
+  modal(`<div class="num" style="font-size:30px">השערים של ${esc(p.name)}</div>
+    <div class="muted" style="font-size:13px">${rows.reduce((a, r) => a + r.gp.goals, 0)} שערים העונה · לחיצה על שורה לפרטי המשחק</div>
+    <div class="card" style="overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 70px 52px;gap:6px;padding:8px 12px;background:var(--bg);font-size:12px;font-weight:700" class="muted"><span>משחק</span><span>מועד</span><span>תוצאה</span></div>
+      ${rows.map(({ g, gp }) => { const v = perspective(p, g); return `<button data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;display:grid;grid-template-columns:1fr 70px 52px;gap:6px;align-items:center;padding:10px 12px;border:0;border-top:1px solid var(--line);background:transparent">
+        <span style="min-width:0"><span class="ell" style="display:block;font-size:13px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</span><span class="muted" style="font-size:11px">⚽ ${gp.goals > 1 ? gp.goals + ' שערים · ' : ''}${mins(g.id)}</span></span>
+        <span style="font-size:12px">יום ${dayName(g.game_date)}<br><span class="muted">${g.game_date.split('-').reverse().join('/')}</span></span>
+        <span style="text-align:center"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></span></button>`; }).join('') || '<div class="row muted">עוד אין שערים העונה</div>'}
+    </div><button class="btn2" data-close>סגירה</button>`);
+};
 actions.toggleView = () => { S.ui.allView = !S.ui.allView; render(); };
 actions.table = (el) => {
   const p = playerById(el.dataset.id); const lg = S.leagues[p.ifa_league_id] || {};
@@ -394,7 +409,7 @@ async function tabStats(p) {
     </div>
     <div class="grid3">${box(s.starts, 'פתח בהרכב', 'var(--lime)')}${box(s.subs, 'נכנס כמחליף')}${box(s.unused, 'לא שותף')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">מתוך ${s.games} משחקי הקבוצה ששוחקו · ${s.L} דק׳ למשחק</div>
-    <div class="grid4">${box(s.goals, 'שערים')}${box(s.assists, 'בישולים*')}${box(s.yellow, 'צהובים', '#FFD43B')}${box(s.red, 'אדומים', 'var(--red)')}</div>
+    <div class="grid4"><button data-act="goalsList" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(s.goals, 'שערים ←')}</button>${box(s.assists, 'בישולים*')}${box(s.yellow, 'צהובים', '#FFD43B')}${box(s.red, 'אדומים', 'var(--red)')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">* בישולים מוזנים ידנית (לחיצה על משחק בלוח המשחקים)</div>
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px"><div class="sec">דקות לפי משחק · לחיצה על עמודה לפרטי המשחק</div>
       <div style="position:relative;height:130px;display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid rgba(255,255,255,.14)">${bars}</div>
