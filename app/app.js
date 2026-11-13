@@ -303,8 +303,8 @@ async function tabInfo(p) {
       <div class="row"><span class="muted">אזרחות</span><b>${esc(p.citizenship || '')}</b></div>
     </div>
     <button class="btn2" data-act="editInfo" data-id="${p.id}">עריכת פרטים ידניים</button>
-    <p class="sec">היסטוריית קבוצות</p>
-    <div class="card">${S.seasons.filter((x) => x.player_id === p.id).map((x) => `<div class="row" style="${x.season_id === sid ? 'background:rgba(200,240,60,.10)' : ''}"><span class="muted">${esc(x.season_label || x.season_id)}</span><span style="text-align:left"><b>${esc(x.team_name || '')}</b> <span class="muted" style="font-size:12px">${esc(x.league_name || '')}</span></span></div>`).join('')}</div>
+    <p class="sec">היסטוריית קבוצות · לחיצה פותחת את העונה באתר ההתאחדות</p>
+    <div class="card">${S.seasons.filter((x) => x.player_id === p.id).map((x) => `<a class="row" href="https://www.football.org.il/players/player/?player_id=${p.ifa_player_id}&season_id=${x.season_id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;${x.season_id === sid ? 'background:rgba(200,240,60,.10)' : ''}"><span class="muted">${esc(x.season_label || x.season_id)}</span><span style="text-align:left"><b>${esc(x.team_name || '')}</b> <span class="muted" style="font-size:12px">${esc(x.league_name || '')}</span> <span style="color:var(--lime)">↗</span></span></a>`).join('')}</div>
     <p class="sec">אנשי קשר</p>
     <div class="card">${(contacts || []).map((c) => `<div class="row"><span>${esc(c.role)} · ${esc(c.name || '')}</span><span style="display:flex;gap:6px">
       ${c.phone ? `<a class="btn2" style="display:flex;align-items:center;text-decoration:none;color:inherit" href="tel:${esc(c.phone)}">חיוג</a><a class="btn2" style="display:flex;align-items:center;text-decoration:none;color:inherit" href="https://wa.me/${esc(c.phone.replace(/\D/g, '').replace(/^0/, '972'))}">וואטסאפ</a>` : ''}</span></div>`).join('') || '<div class="row muted">אין אנשי קשר</div>'}</div>
