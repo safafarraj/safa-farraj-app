@@ -323,19 +323,41 @@ async function tabGames(p) {
       : `<div class="grid2" style="gap:6px;align-items:start">${col('ליגה', league)}${col('גביע', cup)}</div>`}
   </div>`;
 }
-actions.goalsList = async (el) => {
-  const p = playerById(el.dataset.p);
-  const rows = teamGames(p).filter((g) => g.status === 'final').map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) })).filter((r) => r.gp && r.gp.goals > 0);
-  const { data: ev } = rows.length ? await sb.from('game_events').select('game_id,minute,event_type').eq('player_id', p.id).in('event_type', ['goal', 'penalty_goal']).in('game_id', rows.map((r) => r.g.id)) : { data: [] };
-  const mins = (gid) => (ev || []).filter((e) => e.game_id === gid).sort((a, b) => a.minute - b.minute).map((e) => `${e.minute}'${e.event_type === 'penalty_goal' ? ' (פ)' : ''}`).join(', ');
-  modal(`<div class="num" style="font-size:30px">השערים של ${esc(p.name)}</div>
-    <div class="muted" style="font-size:13px">${rows.reduce((a, r) => a + r.gp.goals, 0)} שערים העונה · לחיצה על שורה לפרטי המשחק</div>
+const ARROW_IN = '<svg width="12" height="12" viewBox="0 0 24 24" aria-label="נכנס" style="vertical-align:-1px"><path d="M12 4l7 9h-4.5v7h-5v-7H5z" fill="#2FBF57"/></svg>';
+const ARROW_OUT = '<svg width="12" height="12" viewBox="0 0 24 24" aria-label="יצא" style="vertical-align:-1px"><path d="M12 20l-7-9h4.5V4h5v7H19z" fill="#E5484D"/></svg>';
+function minutesDesc(gp, L) {
+  if (!gp) return 'לא בסגל';
+  const parts = [];
+  if (gp.status === 'starter') parts.push('פתח בהרכב');
+  if (gp.status === 'sub_in') parts.push(`${ARROW_IN} נכנס ${gp.minute_in}'`);
+  if (gp.minute_out) parts.push(`${ARROW_OUT} יצא ${gp.minute_out}'`);
+  if (gp.status === 'bench') parts.push('בסגל, לא שותף');
+  if (gp.status === 'not_in_squad') parts.push('לא בסגל');
+  if (gp.status === 'starter' || gp.status === 'sub_in') parts.push(`${gp.minutes}/${L} דק'`);
+  return parts.join(' · ');
+}
+const LIST_KINDS = {
+  goals: { title: 'משחקים עם שער', test: (gp) => gp && gp.goals > 0 },
+  starts: { title: 'משחקים בהרכב הפותח', test: (gp) => gp && gp.status === 'starter' },
+  subs: { title: 'משחקים כמחליף', test: (gp) => gp && gp.status === 'sub_in' },
+  unused: { title: 'משחקים שלא שותף', test: (gp) => !gp || gp.status === 'bench' || gp.status === 'not_in_squad' },
+};
+actions.gameList = async (el) => {
+  const p = playerById(el.dataset.p); const kind = LIST_KINDS[el.dataset.kind]; const L = gameLength(p);
+  const rows = teamGames(p).filter((g) => g.status === 'final').map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) })).filter((r) => kind.test(r.gp));
+  let ev = [];
+  if (el.dataset.kind === 'goals' && rows.length) ev = (await sb.from('game_events').select('game_id,minute,event_type').eq('player_id', p.id).in('event_type', ['goal', 'penalty_goal']).in('game_id', rows.map((r) => r.g.id))).data || [];
+  const goalMins = (gid) => ev.filter((e) => e.game_id === gid).sort((a, b) => a.minute - b.minute).map((e) => `${e.minute}'${e.event_type === 'penalty_goal' ? ' (פ)' : ''}`).join(', ');
+  modal(`<div class="num" style="font-size:30px">${kind.title}</div>
+    <div class="muted" style="font-size:13px">${esc(p.name)} · ${rows.length} משחקים · לחיצה על שורה לפרטי המשחק</div>
     <div class="card" style="overflow:hidden">
-      <div style="display:grid;grid-template-columns:1fr 70px 52px;gap:6px;padding:8px 12px;background:var(--bg);font-size:12px;font-weight:700" class="muted"><span>משחק</span><span>מועד</span><span>תוצאה</span></div>
-      ${rows.map(({ g, gp }) => { const v = perspective(p, g); return `<button data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;display:grid;grid-template-columns:1fr 70px 52px;gap:6px;align-items:center;padding:10px 12px;border:0;border-top:1px solid var(--line);background:transparent">
-        <span style="min-width:0"><span class="ell" style="display:block;font-size:13px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</span><span class="muted" style="font-size:11px">⚽ ${gp.goals > 1 ? gp.goals + ' שערים · ' : ''}${mins(g.id)}</span></span>
+      <div style="display:grid;grid-template-columns:1fr 66px 48px;gap:6px;padding:8px 12px;background:var(--bg);font-size:12px;font-weight:700" class="muted"><span>משחק</span><span>מועד</span><span>תוצאה</span></div>
+      ${rows.map(({ g, gp }) => { const v = perspective(p, g); const goals = el.dataset.kind === 'goals' ? ` · ⚽ ${goalMins(g.id)}` : (gp && gp.goals ? ` · ⚽×${gp.goals}` : ''); return `<button data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;display:grid;grid-template-columns:1fr 66px 48px;gap:6px;align-items:center;padding:10px 12px;border:0;border-top:1px solid var(--line);background:transparent">
+        <span style="min-width:0;display:flex;flex-direction:column;gap:3px">
+          <span style="display:flex;gap:6px;align-items:center;min-width:0"><span class="tag ${g.competition === 'cup' ? 'cup' : ''}">${g.competition === 'cup' ? 'גביע' : 'ליגה'}</span><span class="ell" style="font-size:13px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</span></span>
+          <span class="muted" style="font-size:11px">${minutesDesc(gp, L)}${goals}</span></span>
         <span style="font-size:12px">יום ${dayName(g.game_date)}<br><span class="muted">${g.game_date.split('-').reverse().join('/')}</span></span>
-        <span style="text-align:center"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></span></button>`; }).join('') || '<div class="row muted">עוד אין שערים העונה</div>'}
+        <span style="text-align:center"><span class="pill ${v.res}">${g.home_score}:${g.away_score}</span></span></button>`; }).join('') || '<div class="row muted">אין משחקים</div>'}
     </div><button class="btn2" data-close>סגירה</button>`);
 };
 actions.toggleView = () => { S.ui.allView = !S.ui.allView; render(); };
@@ -407,9 +429,9 @@ async function tabStats(p) {
         <div style="height:12px;border-radius:6px;background:rgba(255,255,255,.08);position:relative;overflow:hidden"><div style="position:absolute;top:0;bottom:0;right:0;width:${Math.min(100, s.pct || 0)}%;background:${color}"></div><div style="position:absolute;top:0;bottom:0;right:${commit}%;width:2px;background:var(--ink)"></div></div>
         <div class="muted" style="font-size:12px">הקו הלבן = התחייבות בחוזה (${commit}%)</div>`}
     </div>
-    <div class="grid3">${box(s.starts, 'פתח בהרכב', 'var(--lime)')}${box(s.subs, 'נכנס כמחליף')}${box(s.unused, 'לא שותף')}</div>
+    <div class="grid3">${[['starts', s.starts, 'פתח בהרכב ←', 'var(--lime)'], ['subs', s.subs, 'נכנס כמחליף ←'], ['unused', s.unused, 'לא שותף ←']].map(([k, v, l, c]) => `<button data-act="gameList" data-kind="${k}" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(v, l, c)}</button>`).join('')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">מתוך ${s.games} משחקי הקבוצה ששוחקו · ${s.L} דק׳ למשחק</div>
-    <div class="grid4"><button data-act="goalsList" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(s.goals, 'שערים ←')}</button>${box(s.assists, 'בישולים*')}${box(s.yellow, 'צהובים', '#FFD43B')}${box(s.red, 'אדומים', 'var(--red)')}</div>
+    <div class="grid4"><button data-act="gameList" data-kind="goals" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(s.goals, 'שערים ←')}</button>${box(s.assists, 'בישולים*')}${box(s.yellow, 'צהובים', '#FFD43B')}${box(s.red, 'אדומים', 'var(--red)')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">* בישולים מוזנים ידנית (לחיצה על משחק בלוח המשחקים)</div>
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px"><div class="sec">דקות לפי משחק · לחיצה על עמודה לפרטי המשחק</div>
       <div style="position:relative;height:130px;display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid rgba(255,255,255,.14)">${bars}</div>
