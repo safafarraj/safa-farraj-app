@@ -182,6 +182,7 @@ def ensure_vapid(db: DB) -> tuple[str, str]:
 
 
 def send_pushes(db: DB) -> int:
+    ensure_vapid(db)  # make sure the app can subscribe even before the first alert
     pending = db.select("notifications", "sent_at=is.null&order=created_at.asc&limit=50&select=*")
     if not pending:
         return 0
