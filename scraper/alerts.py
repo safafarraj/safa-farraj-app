@@ -137,26 +137,60 @@ class Alerts:
 
     # Sunday morning weekly summary
     def weekly_summary(self) -> None:
-        if self.today.weekday() != WEEKDAY_SUN or not self.at_least(8):
+        """One summary per audience (mine / tracked), sent right after the last game of the week (Mon–Sun) is
+        finished — e.g. Sunday evening if there is a Sunday afternoon game. No games → Sunday 08:00.
+        Fallback: if a game's data is still incomplete, send Monday 08:00 anyway."""
+        wd = self.today.weekday()                      # Mon=0 … Sun=6
+        if wd in (WEEKDAY_FRI, WEEKDAY_SAT, WEEKDAY_SUN):
+            monday = self.today - timedelta(days=wd)
+        elif wd == 0:
+            monday = self.today - timedelta(days=7)    # Monday morning fallback for last week
+        else:
             return
-        since = (self.today - timedelta(days=7)).isoformat()
-        lines = []
-        for p in [p for p in self.players if p["kind"] == "mine"]:
-            rows = self.db.select("game_players", f"player_id=eq.{p['id']}&select=minutes,goals,status,games!inner(game_date,home_team,away_team,home_score,away_score)&games.game_date=gte.{since}&games.status=eq.final")
-            if not rows:
-                lines.append(f"{p['name']}: לא שיחק השבוע")
+        sunday = monday + timedelta(days=6)
+        for aud, label in (("mine", "שחקנים שלי"), ("tracked", "שחקנים במעקב")):
+            players = [p for p in self.players if p["kind"] == aud and p.get("ifa_team_id")]
+            if not players:
                 continue
-            parts = []
-            for r in rows:
-                g = r["games"]
-                home = g["home_team"] == p.get("team_name")
-                ours, theirs = (g["home_score"], g["away_score"]) if home else (g["away_score"], g["home_score"])
-                opp = g["away_team"] if home else g["home_team"]
-                parts.append(f"{ours}:{theirs} מול {opp}, {r['minutes']} דק'" + (f", {r['goals']} ש'" if r["goals"] else ""))
-            lines.append(f"{p['name']}: " + " | ".join(parts))
-        if lines:
-            self.notify("weekly_summary", "🗓️ סיכום שבועי · שחקנים שלי", "\n".join(lines),
-                        f"summary:{self.today}", {"kind": "mine"}, "/")
+            dedupe = f"summary:{sunday}:{aud}"
+            if self.db.select("notifications", f"dedupe_key=eq.{dedupe}&select=id"):
+                continue
+            teams = ",".join(str(t) for t in {p["ifa_team_id"] for p in players})
+            games = self.db.select("games", f"ifa_team_id=in.({teams})&game_date=gte.{monday}&game_date=lte.{sunday}"
+                                            f"&status=neq.postponed&select=*&order=game_date,kickoff_time")
+            if wd == 0:
+                ready = self.at_least(8)
+            elif not games:
+                ready = wd == WEEKDAY_SUN and self.at_least(8)
+            else:
+                last = max(g["game_date"] for g in games)
+                pending = [g for g in games if not (g["status"] == "final" and g["details_complete"])]
+                ready = self.today.isoformat() >= last and not pending
+            if not ready:
+                continue
+            lines = []
+            for p in players:
+                pg = [g for g in games if g["ifa_team_id"] == p["ifa_team_id"]]
+                if not pg:
+                    lines.append(f"{p['name']}: אין משחק השבוע")
+                    continue
+                gps = {r["game_id"]: r for r in self.db.select(
+                    "game_players", f"player_id=eq.{p['id']}&game_id=in.({','.join(str(g['id']) for g in pg)})&select=*")}
+                parts = []
+                for g in pg:
+                    home = g["home_team"] == p.get("team_name") or (g["home_team"] or "").startswith(p.get("team_name") or "~")
+                    opp = g["away_team"] if home else g["home_team"]
+                    if g["home_score"] is None:
+                        parts.append(f"מול {opp}: אין תוצאה עדיין")
+                        continue
+                    ours, theirs = (g["home_score"], g["away_score"]) if home else (g["away_score"], g["home_score"])
+                    r = gps.get(g["id"])
+                    role = ("לא בסגל" if not r or r["status"] == "not_in_squad" else "ספסל" if r["status"] == "bench"
+                            else f"{r['minutes']} דק'")
+                    extra = f", {r['goals']} ש'" if r and r.get("goals") else ""
+                    parts.append(f"{ours}:{theirs} מול {opp} ({'בית' if home else 'חוץ'}), {role}{extra}")
+                lines.append(f"{p['name']}: " + " | ".join(parts))
+            self.notify("weekly_summary", f"🗓️ סיכום שבועי · {label}", "\n".join(lines), dedupe, {"kind": aud}, "/")
 
 
 # ---------------------------------------------------------------------------
