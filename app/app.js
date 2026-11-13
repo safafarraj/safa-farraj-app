@@ -198,7 +198,7 @@ route(/^\/tracked$/, () => {
       <div style="font-weight:800">${esc(p.name)}</div><div class="muted" style="font-size:12px">${esc(p.team_name || '')} · ${esc(p.league_name || '')}</div>
       <button class="btn2" data-go="#/player/${p.id}/games" style="height:38px;font-size:13px">לוח משחקים</button></div>`).join('')}</div>`
     : '<div class="card muted" style="padding:14px;font-size:14px">אין עדיין שחקנים במעקב. שלח ל-Claude קישור לפרופיל של שחקן באתר ההתאחדות, והוא יוסיף אותו.</div>'}
-  </div>`, { back: true });
+  </div>`, { back: '#/' });
 });
 actions.quick = (el) => {
   const p = playerById(el.dataset.id); const s = stats(p); const today = todayIso();
