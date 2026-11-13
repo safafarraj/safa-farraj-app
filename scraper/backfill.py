@@ -51,12 +51,11 @@ class Backfill:
 
     @staticmethod
     def league_id(sid: int, *htmls: str):
-        """Real league of the page (the site menu always links the top league – skip it)."""
+        """The team page links 'לכל משחקי הליגה' -> /leagues/games/?league_id=X (the menu links are not reliable)."""
         for html in htmls:
-            nav = set(re.findall(r'class="parent-node"[^>]*href="/leagues/league/\?league_id=(\d+)', html))
-            for m in re.finditer(r"league_id=(\d+)&(?:amp;)?season_id=" + str(sid) + r"\b", html):
-                if m.group(1) not in nav and m.group(1) != "0":
-                    return int(m.group(1))
+            m = re.search(r"/leagues/games/\?league_id=(\d+)&(?:amp;)?season_id=" + str(sid) + r"\b", html)
+            if m:
+                return int(m.group(1))
         return None
 
     def season(self, p: dict, sid: int, label: str) -> None:
@@ -84,7 +83,7 @@ class Backfill:
         if team_id:
             team_html = self.client.team_page(team_id, sid)
             standings = ifa.parse_standings(team_html)
-            league_id = self.league_id(sid, team_html, self._player_html)
+            league_id = self.league_id(sid, team_html)
             if league_id:
                 length = ifa.parse_game_length(self.client.league_page(league_id, sid))
                 self.db.upsert("leagues", {"ifa_league_id": league_id, "season_id": sid, "name": prof.league_name,
