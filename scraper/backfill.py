@@ -49,8 +49,19 @@ class Backfill:
                     log(f"season {sid} failed: {type(e).__name__}: {str(e)[:200]}")
         log(f"done · requests={self.client.requests_made} · {self.client.bytes_received/1e6:.1f}MB")
 
+    @staticmethod
+    def league_id(sid: int, *htmls: str):
+        """Real league of the page (the site menu always links the top league – skip it)."""
+        for html in htmls:
+            nav = set(re.findall(r'class="parent-node"[^>]*href="/leagues/league/\?league_id=(\d+)', html))
+            for m in re.finditer(r"league_id=(\d+)&(?:amp;)?season_id=" + str(sid) + r"\b", html):
+                if m.group(1) not in nav and m.group(1) != "0":
+                    return int(m.group(1))
+        return None
+
     def season(self, p: dict, sid: int, label: str) -> None:
-        prof = ifa.parse_player_page(self.client.player_page(p["ifa_player_id"], sid))
+        self._player_html = self.client.player_page(p["ifa_player_id"], sid)
+        prof = ifa.parse_player_page(self._player_html)
         rows = ifa.parse_player_games(self.client.player_games(p["ifa_player_id"], sid))
         played_ids = {r.game_id: r for r in rows}
 
@@ -73,8 +84,7 @@ class Backfill:
         if team_id:
             team_html = self.client.team_page(team_id, sid)
             standings = ifa.parse_standings(team_html)
-            m = re.search(r"league_id=(\d+)&(?:amp;)?season_id=" + str(sid), team_html)
-            league_id = int(m.group(1)) if m else None
+            league_id = self.league_id(sid, team_html, self._player_html)
             if league_id:
                 length = ifa.parse_game_length(self.client.league_page(league_id, sid))
                 self.db.upsert("leagues", {"ifa_league_id": league_id, "season_id": sid, "name": prof.league_name,
@@ -99,7 +109,10 @@ class Backfill:
             g = self.game(gid, sid)
             if not g.game_date:
                 continue
-            final = g.home_score is not None
+            played_out = g.game_date < self.today
+            final = g.home_score is not None or (played_out and g.has_lineups)
+            has_moves = any(k in ("sub_in", "sub_out") for x in g.players for k, _ in x.events)
+            no_minutes = g.home_score is None and not has_moves  # children leagues: no result, no subs → no minutes
             competition = "cup" if ifa.is_cup(g.competition_title) else comp
             saved = self.db.upsert("games", {
                 "ifa_game_id": gid, "season_id": sid, "ifa_team_id": team_id, "competition": competition,
@@ -121,6 +134,8 @@ class Backfill:
                 st = gp.status
                 if gp.status == "sub_in" and m_in is None:
                     st, mins = "bench", 0
+                if no_minutes and st in ("starter", "sub_in"):
+                    st, mins, m_in, m_out = "played", 0, None, None  # took part, minutes not published
                 shirt, cap, events = gp.shirt, gp.captain, gp.events
             game_row_id = saved[0]["id"]
             self.db.upsert("game_players", {

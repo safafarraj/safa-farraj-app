@@ -37,16 +37,41 @@ async function loadCore() {
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
   S.players = p.data; S.games = g.data; S.gp = gp.data; S.seasons = ps.data;
-  S.leagues = Object.fromEntries(l.data.map((x) => [x.ifa_league_id, x]));
+  S.leaguesAll = l.data;
+  S.leagues = Object.fromEntries(l.data.filter((x) => x.season_id === 28).map((x) => [x.ifa_league_id, x]));
+  for (const k in _ourName) delete _ourName[k];
   S.unread = n.count || 0;
 }
 
 const playerById = (id) => S.players.find((p) => String(p.id) === String(id));
-const gameLength = (p) => (S.leagues[p.ifa_league_id] || {}).game_length_min || 90;
-const teamGames = (p) => S.games.filter((g) => g.ifa_team_id === p.ifa_team_id);
+// season context: the selected season in the profile (falls back to the current one)
+const curSid = (p) => (S.ui.season && S.seasons.some((s) => s.player_id === p.id && s.season_id === S.ui.season)) ? S.ui.season : p.current_season_id;
+function seasonCtx(p, sid = p.current_season_id) {
+  if (!sid || sid === p.current_season_id) return { sid: p.current_season_id, team: p.ifa_team_id, league: p.ifa_league_id, L: (S.leagues[p.ifa_league_id] || {}).game_length_min || 90, current: true, row: S.seasons.find((s) => s.player_id === p.id && s.season_id === p.current_season_id) };
+  const row = S.seasons.find((s) => s.player_id === p.id && s.season_id === sid) || {};
+  const lg = Object.values(S.leaguesAll || {}).find((l) => l.ifa_league_id === row.ifa_league_id && l.season_id === sid);
+  return { sid, team: row.ifa_team_id, league: row.ifa_league_id, L: row.game_length_min || (lg || {}).game_length_min || 80, current: false, row, lg };
+}
+const gameLength = (p, sid) => seasonCtx(p, sid).L;
+const teamGames = (p, sid) => {
+  const c = seasonCtx(p, sid);
+  return S.games.filter((g) => g.season_id === c.sid && (g.ifa_team_id === c.team || (!c.current && g.ifa_team_id == null && S.gp.some((x) => x.game_id === g.id && x.player_id === p.id))));
+};
+// our team's name as written in a team's fixtures = the name that appears in all of its games
+const _ourName = {};
+function ourName(g) {
+  const k = g.season_id + ':' + g.ifa_team_id;
+  if (!(k in _ourName)) {
+    const cnt = {};
+    for (const x of S.games) if (x.season_id === g.season_id && x.ifa_team_id === g.ifa_team_id) for (const t of [x.home_team, x.away_team]) cnt[t] = (cnt[t] || 0) + 1;
+    _ourName[k] = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }
+  return _ourName[k];
+}
 
 function perspective(p, g) {
-  const home = g.home_team === p.team_name || (g.home_team && p.team_name && g.home_team.startsWith(p.team_name));
+  const on = g.ifa_team_id != null && ourName(g);
+  const home = on ? g.home_team === on : (g.home_team === p.team_name || (g.home_team && p.team_name && g.home_team.startsWith(p.team_name)));
   const ours = home ? g.home_score : g.away_score, theirs = home ? g.away_score : g.home_score;
   const res = ours == null ? null : ours > theirs ? 'W' : ours < theirs ? 'L' : 'D';
   return { home, opp: home ? g.away_team : g.home_team, ours, theirs, res };
@@ -57,22 +82,25 @@ function roleText(gp) {
   if (gp.status === 'starter') return gp.minute_out ? `פתח · יצא ${gp.minute_out}'` : 'פתח בהרכב';
   if (gp.status === 'sub_in') return `נכנס ${gp.minute_in}'`;
   if (gp.status === 'bench') return 'בסגל, לא שותף';
+  if (gp.status === 'played') return 'שיחק';
   return 'לא בסגל';
 }
 
-function stats(p) {
-  const L = gameLength(p);
-  const finals = teamGames(p).filter((g) => g.status === 'final');
+function stats(p, sid) {
+  const L = gameLength(p, sid);
+  const finals = teamGames(p, sid).filter((g) => g.status === 'final');
   const rows = finals.map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) }));
+  const noMinutes = rows.some((r) => r.gp && r.gp.status === 'played');
   const counted = rows.filter((r) => !(r.gp && r.gp.excluded_from_contract));
   const played = counted.reduce((a, r) => a + (r.gp ? r.gp.minutes : 0), 0);
-  const possible = counted.length * L;
+  const possible = noMinutes ? 0 : counted.length * L;
   const sum = (k) => rows.reduce((a, r) => a + (r.gp ? r.gp[k] || 0 : 0), 0);
   return {
-    L, rows, played, possible, pct: possible ? (100 * played) / possible : null,
-    starts: rows.filter((r) => r.gp && r.gp.status === 'starter').length,
+    L, rows, played, possible, noMinutes, pct: possible ? (100 * played) / possible : null,
+    starts: rows.filter((r) => r.gp && (r.gp.status === 'starter' || r.gp.status === 'played')).length,
     subs: rows.filter((r) => r.gp && r.gp.status === 'sub_in').length,
     unused: rows.filter((r) => !r.gp || r.gp.status === 'bench' || r.gp.status === 'not_in_squad').length,
+    lineups: rows.filter((r) => r.gp).length,
     games: rows.length, goals: sum('goals'), assists: sum('assists'), yellow: sum('yellow_cards'), red: sum('red_cards'),
   };
 }
@@ -237,12 +265,12 @@ route(/^\/player\/(\d+)(?:\/(\w+))?$/, async (m) => {
 
 function seasonSelect(p) {
   const opts = S.seasons.filter((s) => s.player_id === p.id);
-  const cur = S.ui.season || opts[0]?.season_id;
+  const cur = curSid(p);
   return `<label class="lbl" style="flex-direction:row;align-items:center">עונה
     <select class="field" data-season style="flex:1">${opts.map((s) => `<option value="${s.season_id}" ${s.season_id == cur ? 'selected' : ''}>${esc(s.season_label || s.season_id)}</option>`).join('')}</select></label>`;
 }
 document.addEventListener('change', (e) => { if (e.target.matches('[data-season]')) { S.ui.season = +e.target.value; render(); } });
-const isCurrentSeason = (p) => !S.ui.season || S.ui.season === p.current_season_id;
+const isCurrentSeason = (p) => curSid(p) === p.current_season_id;
 
 async function tabInfo(p) {
   const { data: contacts } = await sb.from('contacts').select('*').eq('player_id', p.id);
@@ -298,25 +326,24 @@ actions.addContact = (el) => {
 };
 
 function gameTile(p, g, gp) {
-  const v = perspective(p, g), up = g.status !== 'final';
+  const v = perspective(p, g), up = g.status !== 'final' && g.game_date >= todayIso();
+  const noRes = !up && g.home_score == null;
   const comp = g.competition === 'cup' ? 'גביע' : 'ליגה';
   return `<button class="card" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;padding:6px 8px;display:flex;flex-direction:column;gap:2px;border-radius:10px;${up ? 'border-style:dashed;border-color:rgba(200,240,60,.35);background:transparent' : ''}">
     <div style="display:flex;justify-content:space-between;gap:4px;font-size:12px"><span class="ell" style="font-weight:700">${esc(v.opp)}</span><span class="muted" style="font-size:11px;flex-shrink:0">יום ${dayName(g.game_date)} ${fmtDate(g.game_date)}</span></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
-      ${up ? `<span class="pill up">${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'קרוב'}</span>` : `<span class="pill ${v.res}">${v.ours}:${v.theirs}</span>`}
+      ${up ? `<span class="pill up">${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'קרוב'}</span>` : noRes ? '<span class="pill" style="opacity:.7">ללא תוצאה</span>' : `<span class="pill ${v.res}">${v.ours}:${v.theirs}</span>`}
       <span class="muted ell" style="font-size:10px">${v.home ? 'ב' : 'ח'} · ${up ? (g.kickoff_time ? 'נקבע' : 'שעה טרם נקבעה') : roleText(gp)}${S.ui.allView ? ' · ' + comp : ''}</span>
-      <span class="num" style="font-size:18px;flex-shrink:0">${up || !gp ? '' : gp.minutes + '′'}</span></div></button>`;
+      <span class="num" style="font-size:18px;flex-shrink:0">${up || !gp ? '' : gp.status === 'played' ? '✓' : gp.minutes + '′'}</span></div></button>`;
 }
 
 async function tabGames(p) {
-  if (!isCurrentSeason(p)) {
-    const h = S.seasons.find((s) => s.player_id === p.id && s.season_id === S.ui.season);
-    return `<div class="stack">${seasonSelect(p)}<div class="card muted" style="padding:16px;font-size:14px">בעונת ${esc(h?.season_label)}: ${esc(h?.team_name)} (${esc(h?.league_name)}). לוח המשחקים של עונות קודמות יתווסף בהמשך.</div></div>`;
-  }
-  const gs = teamGames(p).map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) }));
+  const sid = curSid(p), cx = seasonCtx(p, sid);
+  const gs = teamGames(p, sid).map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) }));
   const league = gs.filter((x) => x.g.competition !== 'cup'), cup = gs.filter((x) => x.g.competition === 'cup');
   const col = (title, list) => `<div style="display:flex;flex-direction:column;gap:4px"><p class="sec">${title}</p>${list.map((x) => gameTile(p, x.g, x.gp)).join('') || '<div class="muted" style="font-size:12px">אין משחקים</div>'}</div>`;
-  return `<div class="stack">${seasonSelect(p)}
+  const past = !cx.current ? `<div class="card" style="padding:12px 14px;font-size:14px">${esc(cx.row?.team_name || '')} · <span class="muted">${esc(cx.row?.league_name || '')}</span>${!gs.length ? '<div class="muted" style="font-size:13px;margin-top:6px">אין באתר ההתאחדות לוח משחקים לעונה זו' + (cx.row?.backfilled_at ? '' : ' (הנתונים בטעינה)') + '</div>' : ''}</div>` : '';
+  return `<div class="stack">${seasonSelect(p)}${past}
     <button class="btn" data-act="table" data-id="${p.id}">טבלת הליגה</button>
     <button class="btn2" data-act="toggleView">${S.ui.allView ? 'ליגה וגביע בנפרד' : 'תצוגה מאוחדת'}</button>
     <div class="muted" style="font-size:11px">משחקים קרובים מסומנים במסגרת מקווקוות · לחיצה על משחק לפרטים</div>
@@ -329,6 +356,7 @@ const ARROW_OUT = '<svg width="12" height="12" viewBox="0 0 24 24" aria-label="�
 function minutesDesc(gp, L) {
   if (!gp) return 'לא בסגל';
   const parts = [];
+  if (gp.status === 'played') return 'שיחק (ללא נתוני דקות)';
   if (gp.status === 'starter') parts.push('פתח בהרכב');
   if (gp.status === 'sub_in') parts.push(`${ARROW_IN} נכנס ${gp.minute_in}'`);
   if (gp.minute_out) parts.push(`${ARROW_OUT} יצא ${gp.minute_out}'`);
@@ -340,6 +368,7 @@ function minutesDesc(gp, L) {
 function minutesShort(gp) {
   if (!gp || gp.status === 'not_in_squad') return 'לא בסגל';
   if (gp.status === 'bench') return 'ספסל';
+  if (gp.status === 'played') return 'שיחק';
   const parts = [];
   if (gp.status === 'starter') parts.push('הרכב');
   if (gp.status === 'sub_in') parts.push(`${ARROW_IN}${gp.minute_in}'`);
@@ -348,13 +377,13 @@ function minutesShort(gp) {
 }
 const LIST_KINDS = {
   goals: { title: 'משחקים עם שער', test: (gp) => gp && gp.goals > 0 },
-  starts: { title: 'משחקים בהרכב הפותח', test: (gp) => gp && gp.status === 'starter' },
+  starts: { title: 'משחקים בהרכב הפותח', test: (gp) => gp && (gp.status === 'starter' || gp.status === 'played') },
   subs: { title: 'משחקים כמחליף', test: (gp) => gp && gp.status === 'sub_in' },
   unused: { title: 'משחקים שלא שותף', test: (gp) => !gp || gp.status === 'bench' || gp.status === 'not_in_squad' },
 };
 actions.gameList = async (el) => {
-  const p = playerById(el.dataset.p); const kind = LIST_KINDS[el.dataset.kind]; const L = gameLength(p);
-  const rows = teamGames(p).filter((g) => g.status === 'final').map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) })).filter((r) => kind.test(r.gp));
+  const p = playerById(el.dataset.p); const kind = LIST_KINDS[el.dataset.kind]; const sid = curSid(p); const L = gameLength(p, sid);
+  const rows = teamGames(p, sid).filter((g) => g.status === 'final').map((g) => ({ g, gp: S.gp.find((x) => x.game_id === g.id && x.player_id === p.id) })).filter((r) => kind.test(r.gp));
   let ev = [];
   if (el.dataset.kind === 'goals' && rows.length) ev = (await sb.from('game_events').select('game_id,minute,event_type').eq('player_id', p.id).in('event_type', ['goal', 'penalty_goal']).in('game_id', rows.map((r) => r.g.id))).data || [];
   const goalMins = (gid) => ev.filter((e) => e.game_id === gid).sort((a, b) => a.minute - b.minute).map((e) => `${e.minute}'${e.event_type === 'penalty_goal' ? ' (פ)' : ''}`).join(', ');
@@ -368,19 +397,21 @@ actions.gameList = async (el) => {
           <td style="padding:10px;text-align:center"><span class="tag ${g.competition === 'cup' ? 'cup' : ''}">${g.competition === 'cup' ? 'ג' : 'ל'}</span></td>
           <td style="padding:10px 6px;font-weight:700">${esc(g.home_team)} – ${esc(g.away_team)}</td>
           <td style="padding:10px 6px">יום ${dayName(g.game_date)} ${g.game_date.split('-').reverse().join('/')}</td>
-          <td style="padding:10px 6px"><span class="pill ${v.res}" dir="ltr">${g.away_score} : ${g.home_score}</span></td>
+          <td style="padding:10px 6px">${g.home_score == null ? '<span class="pill" style="opacity:.7">ללא תוצאה</span>' : `<span class="pill ${v.res}" dir="ltr">${g.away_score} : ${g.home_score}</span>`}</td>
           <td style="padding:10px">${minutesDesc(gp, L)}${goals}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted" style="padding:12px">אין משחקים</td></tr>'}</tbody>
       </table>
     </div><button class="btn2" data-close>סגירה</button>`);
 };
 actions.toggleView = () => { S.ui.allView = !S.ui.allView; render(); };
 actions.table = (el) => {
-  const p = playerById(el.dataset.id); const lg = S.leagues[p.ifa_league_id] || {};
+  const p = playerById(el.dataset.id); const cx = seasonCtx(p, curSid(p));
+  const lg = (cx.current ? S.leagues[p.ifa_league_id] : cx.lg) || {};
+  const tname = cx.current ? p.team_name : (cx.row?.team_name || '');
   const rows = lg.standings || [];
-  modal(`<div class="num" style="font-size:30px">טבלת הליגה</div><div class="muted" style="font-size:13px">לחיצה על שם קבוצה פותחת את דף הקבוצה בהתאחדות<br>${esc(lg.name || p.league_name)} · עודכן ${lg.updated_at ? new Date(lg.updated_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' }) : ''}</div>
+  modal(`<div class="num" style="font-size:30px">טבלת הליגה</div><div class="muted" style="font-size:13px">לחיצה על שם קבוצה פותחת את דף הקבוצה בהתאחדות<br>${esc(lg.name || (cx.current ? p.league_name : cx.row?.league_name) || '')}${!rows.length ? ' · אין טבלה לעונה זו' : ''} · עודכן ${lg.updated_at ? new Date(lg.updated_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' }) : ''}</div>
     <div class="card" style="font-size:13px;overflow:hidden">
       <div style="display:grid;grid-template-columns:24px 1fr 30px 48px 30px;gap:4px;padding:8px 10px;background:var(--bg);font-weight:700" class="muted"><span>#</span><span>קבוצה</span><span>מש׳</span><span>שע׳</span><span>נק׳</span></div>
-      ${rows.map((r) => `<div style="display:grid;grid-template-columns:24px 1fr 30px 48px 30px;gap:4px;padding:8px 10px;border-top:1px solid var(--line);${r.team && p.team_name && r.team.startsWith(p.team_name) ? 'background:rgba(200,240,60,.14);color:var(--lime);font-weight:700' : ''}"><span>${r.pos}</span>${r.team_id ? `<a class="ell" href="https://www.football.org.il/team-details/?team_id=${r.team_id}&season_id=${lg.season_id || 28}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,.25)">${esc(r.team)}</a>` : `<span class="ell">${esc(r.team)}</span>`}<span>${r.played}</span><span>${esc(r.goals)}</span><b>${r.points}</b></div>`).join('')}
+      ${rows.map((r) => `<div style="display:grid;grid-template-columns:24px 1fr 30px 48px 30px;gap:4px;padding:8px 10px;border-top:1px solid var(--line);${(r.team_id && r.team_id === cx.team) || (r.team && tname && r.team.startsWith(tname)) ? 'background:rgba(200,240,60,.14);color:var(--lime);font-weight:700' : ''}"><span>${r.pos}</span>${r.team_id ? `<a class="ell" href="https://www.football.org.il/team-details/?team_id=${r.team_id}&season_id=${lg.season_id || 28}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,.25)">${esc(r.team)}</a>` : `<span class="ell">${esc(r.team)}</span>`}<span>${r.played}</span><span>${esc(r.goals)}</span><b>${r.points}</b></div>`).join('')}
     </div><button class="btn2" data-close>סגירה</button>`);
 };
 actions.game = (el) => {
@@ -391,7 +422,7 @@ actions.game = (el) => {
       <div class="row"><span class="muted">מסגרת</span><span>${esc(g.competition_name || (g.competition === 'cup' ? 'גביע' : 'ליגה'))}</span></div>
       <div class="row"><span class="muted">מועד</span><span>יום ${dayName(g.game_date)} ${fmtDate(g.game_date)} · ${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'שעה טרם נקבעה'}</span></div>
       <div class="row"><span class="muted">מגרש</span><span>${esc(g.venue || 'טרם נקבע')}</span></div>
-      ${g.status === 'final' ? `<div class="row"><span class="muted">תוצאה</span><span class="pill ${v.res}">${v.ours}:${v.theirs}</span></div>` : ''}
+      ${g.status === 'final' ? `<div class="row"><span class="muted">תוצאה</span>${g.home_score == null ? '<span class="muted">לא פורסמה תוצאה (ליגת ילדים)</span>' : `<span class="pill ${v.res}">${v.ours}:${v.theirs}</span>`}</div>` : ''}
       ${gp ? `<div class="row"><span class="muted">הרכב</span><b>${gp.status === 'starter' ? 'פתח בהרכב' : gp.status === 'sub_in' ? 'נכנס כמחליף' : gp.status === 'bench' ? 'בסגל, לא שותף' : 'לא בסגל'}</b></div>
         ${gp.status === 'sub_in' ? `<div class="row"><span class="muted">נכנס בדקה</span><b>${gp.minute_in ?? '-'}</b></div>` : ''}
         ${gp.minute_out ? `<div class="row"><span class="muted">יצא בחילוף בדקה</span><b>${gp.minute_out}</b></div>` : ''}
@@ -424,25 +455,31 @@ function icsHref(p, g) {
 }
 
 async function tabStats(p) {
-  const s = stats(p);
+  const sid = curSid(p), cx = seasonCtx(p, sid);
+  const s = stats(p, sid);
+  if (!cx.current && cx.row) {  // IFA season totals (cover games without published line-ups too)
+    if (cx.row.goals != null) s.goals = Math.max(s.goals, cx.row.goals);
+    if (cx.row.yellow_cards != null) s.yellow = Math.max(s.yellow, cx.row.yellow_cards);
+    if (cx.row.red_cards != null) s.red = Math.max(s.red, cx.row.red_cards);
+  }
   const { data: cs } = await sb.from('contracts').select('*').eq('player_id', p.id).eq('contract_type', 'club').order('end_date', { ascending: false }).limit(1);
-  const c = cs && cs[0]; const commit = c && c.minutes_commitment_pct != null ? +c.minutes_commitment_pct : null;
+  const c = cx.current && cs && cs[0]; const commit = c && c.minutes_commitment_pct != null ? +c.minutes_commitment_pct : null;
   const ok = commit == null ? null : s.pct >= commit;
   const color = ok == null ? 'var(--ink)' : ok ? 'var(--green)' : 'var(--red)';
   const gap = commit == null ? '' : ok ? `עוד ${Math.floor(s.played - commit / 100 * s.possible)} דק׳ עד אדום` : `חסרות ${Math.ceil(commit / 100 * s.possible - s.played)} דק׳ לירוק`;
-  const bars = s.rows.map((r) => { const mins = r.gp ? r.gp.minutes : 0; return `<button data-act="game" data-p="${p.id}" data-g="${r.g.id}" aria-label="פרטי המשחק" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px;border:0;background:transparent;padding:0;min-width:0"><span class="num" style="font-size:14px">${mins}</span><div style="width:100%;max-width:24px;border-radius:4px 4px 0 0;height:${Math.max(2, Math.round(mins / s.L * 110))}px;background:${mins ? 'var(--lime)' : 'rgba(255,255,255,.18)'}"></div></button>`; }).join('');
+  const bars = s.rows.map((r) => { const pl = r.gp && r.gp.status === 'played'; const mins = pl ? s.L / 2 : r.gp ? r.gp.minutes : 0; return `<button data-act="game" data-p="${p.id}" data-g="${r.g.id}" aria-label="פרטי המשחק" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px;border:0;background:transparent;padding:0;min-width:0"><span class="num" style="font-size:14px">${pl ? '✓' : mins}</span><div style="width:100%;max-width:24px;border-radius:4px 4px 0 0;height:${Math.max(2, Math.round(mins / s.L * 110))}px;background:${mins ? 'var(--lime)' : 'rgba(255,255,255,.18)'}"></div></button>`; }).join('');
   const box = (v, l, c2 = 'var(--ink)') => `<div class="card" style="padding:12px 6px;text-align:center"><div class="num" style="font-size:40px;color:${c2}">${v}</div><div class="muted" style="font-size:12px">${l}</div></div>`;
   return `<div class="stack">${seasonSelect(p)}
-    ${isCurrentSeason(p) ? '' : '<div class="card muted" style="padding:14px;font-size:14px">נתוני עונות קודמות יתווספו בהמשך. מוצגת העונה הנוכחית.</div>'}
+    ${cx.current ? '' : `<div class="card" style="padding:12px 14px;font-size:14px">${esc(cx.row?.team_name || '')} · <span class="muted">${esc(cx.row?.league_name || '')}</span>${!cx.row?.backfilled_at ? '<div class="muted" style="font-size:13px;margin-top:6px">הנתונים של עונה זו בטעינה</div>' : s.games && !s.lineups ? '<div class="muted" style="font-size:13px;margin-top:6px">בעונה זו לא פורסמו הרכבים באתר ההתאחדות, לכן אין נתוני דקות. שערים וכרטיסים לפי סיכום העונה באתר.</div>' : ''}</div>`}
     <div class="card pitch" style="padding:18px;display:flex;flex-direction:column;gap:10px">
       <div class="sec">דקות משחק · ליגה + גביע</div>
-      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><span class="num" style="font-size:64px;color:${color}">${s.pct == null ? '–' : s.pct.toFixed(1) + '%'}</span><span class="muted" style="font-size:14px;padding-bottom:10px">${s.played} / ${s.possible} דק׳</span></div>
-      ${commit == null ? '<div class="muted" style="font-size:13px">אין עדיין חוזה מועדון עם התחייבות לדקות. הצבע יופיע אחרי הזנת החוזה.</div>'
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><span class="num" style="font-size:64px;color:${color}">${s.pct == null ? '–' : s.pct.toFixed(1) + '%'}</span><span class="muted" style="font-size:14px;padding-bottom:10px">${s.noMinutes ? 'באתר ההתאחדות לא פורסמו דקות משחק לעונה זו (ליגת ילדים) · מוצגת השתתפות בלבד' : `${s.played} / ${s.possible} דק׳`}</span></div>
+      ${commit == null ? !cx.current ? '' : '<div class="muted" style="font-size:13px">אין עדיין חוזה מועדון עם התחייבות לדקות. הצבע יופיע אחרי הזנת החוזה.</div>'
       : `<div style="font-weight:700;font-size:14px;color:${color}">${ok ? 'עומד בהתחייבות החוזה' : 'לא עומד בהתחייבות החוזה'} (${gap})</div>
         <div style="height:12px;border-radius:6px;background:rgba(255,255,255,.08);position:relative;overflow:hidden"><div style="position:absolute;top:0;bottom:0;right:0;width:${Math.min(100, s.pct || 0)}%;background:${color}"></div><div style="position:absolute;top:0;bottom:0;right:${commit}%;width:2px;background:var(--ink)"></div></div>
         <div class="muted" style="font-size:12px">הקו הלבן = התחייבות בחוזה (${commit}%)</div>`}
     </div>
-    <div class="grid3">${[['starts', s.starts, 'פתח בהרכב ←', 'var(--lime)'], ['subs', s.subs, 'נכנס כמחליף ←'], ['unused', s.unused, 'לא שותף ←']].map(([k, v, l, c]) => `<button data-act="gameList" data-kind="${k}" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(v, l, c)}</button>`).join('')}</div>
+    <div class="grid3">${[['starts', s.starts, s.noMinutes ? 'שיחק ←' : 'פתח בהרכב ←', 'var(--lime)'], ['subs', s.subs, 'נכנס כמחליף ←'], ['unused', s.unused, 'לא שותף ←']].map(([k, v, l, c]) => `<button data-act="gameList" data-kind="${k}" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(v, l, c)}</button>`).join('')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">מתוך ${s.games} משחקי הקבוצה ששוחקו · ${s.L} דק׳ למשחק</div>
     <div class="grid4"><button data-act="gameList" data-kind="goals" data-p="${p.id}" style="border:0;padding:0;background:none;text-align:inherit">${box(s.goals, 'שערים ←')}</button>${box(s.assists, 'בישולים*')}${box(s.yellow, 'צהובים', '#FFD43B')}${box(s.red, 'אדומים', 'var(--red)')}</div>
     <div class="muted" style="font-size:12px;margin-top:-4px">* בישולים מוזנים ידנית (לחיצה על משחק בלוח המשחקים)</div>
