@@ -199,7 +199,7 @@ def send_pushes(db: DB) -> int:
             for s in subs:
                 try:
                     webpush({"endpoint": s["endpoint"], "keys": s["keys"]}, payload, vapid_private_key=priv,
-                            vapid_claims={"sub": "https://github.com/safafarraj/safa-farraj-app"}, ttl=86400)
+                            vapid_claims={"sub": "https://safa-farraj-app.vercel.app"}, ttl=86400)
                     sent += 1
                 except WebPushException as e:
                     code = getattr(e.response, "status_code", None)
