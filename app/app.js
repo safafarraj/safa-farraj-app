@@ -549,7 +549,7 @@ actions.editContract = async (el) => {
   const f = (name, label, type = 'text') => `<label class="lbl">${label}<input class="field" type="${type}" name="${name}" value="${esc(c[name] ?? '')}"></label>`;
   const m = modal(`<div class="num" style="font-size:30px">${club ? 'חוזה עם המועדון' : 'חוזה עם הסוכן'}</div>
     ${el.prefill ? `<div class="card" style="padding:10px 12px;font-size:13px">הנתונים חולצו מהחוזה על ידי העוזר. בדוק, תקן אם צריך, ואשר. שדה ריק יוצג כ"-".${c.file_path ? ' הקובץ כבר מצורף.' : ''}</div>` : ''}
-    <label class="lbl">קובץ החוזה (PDF / תמונה)<input class="field" type="file" name="file" accept=".pdf,image/*" style="padding-top:10px"></label>
+    <label class="lbl">קובץ החוזה (PDF / תמונה)<input class="field" type="file" name="file" accept=".pdf,.docx,image/*" style="padding-top:10px"></label>
     ${f('start_date', 'מועד תחילה', 'date')}${f('end_date', 'מועד סיום', 'date')}
     ${club ? f('minutes_commitment_pct', 'התחייבות לדקות משחק (%)', 'number') + f('discounts', 'הנחות') + f('travel_allowance', 'דמי נסיעות') + f('salary', 'שכר') + f('release_clause', 'סעיף שחרור') + f('extension_option', 'אופציה להארכה') : f('agent_fee', 'עמלת סוכן')}
     <button class="btn" data-save>שמירה ואישור</button><button class="btn2" data-close>ביטול</button>`);
@@ -565,6 +565,8 @@ actions.editContract = async (el) => {
       vals.file_path = path;
     }
     if (!vals.file_path && c.file_path) vals.file_path = c.file_path;
+    if (file && (isWord(file) || file.type.startsWith('image/'))) { ev.target.textContent = 'קורא את הקובץ…'; vals.file_text = await readDocText(file); }
+    else if (!file && c.file_text) vals.file_text = c.file_text;
     const r = c.id ? await sb.from('contracts').update(vals).eq('id', c.id) : await sb.from('contracts').insert(vals);
     if (r.error) { ev.target.disabled = false; return toast('שגיאה בשמירה'); }
     m.remove(); toast('החוזה נשמר'); render();
@@ -671,6 +673,28 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   </div>`, { tab: 'schedule' });
 });
 
+// ---------------------------------------------------------------- reading documents on the phone (free, private)
+// photos of documents → OCR (Hebrew + English), Word files → text. PDFs are read on the server.
+const loadScript = (src) => new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = bad; document.head.appendChild(el); });
+const isWord = (f) => /\.docx$/i.test(f.name) || f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+async function readDocText(file, onStatus) {
+  try {
+    if (isWord(file)) {
+      onStatus && onStatus('קורא את קובץ ה-Word…');
+      await loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js');
+      const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+      return (r.value || '').trim();
+    }
+    if (file.type.startsWith('image/')) {
+      onStatus && onStatus('קורא את הטקסט מהתמונה… (עד דקה)');
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+      const r = await window.Tesseract.recognize(file, 'heb+eng');
+      return (r.data?.text || '').trim();
+    }
+  } catch (e) { console.error('readDocText', e); }
+  return null;
+}
+
 // ---------------------------------------------------------------- in-app assistant (bot)
 const CHAT_KEY = 'sf-chat-v1';
 function chatLoad() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch { return []; } }
@@ -683,13 +707,13 @@ route(/^\/bot$/, () => {
   shell('עוזר', `<div class="chat" id="chat">
     ${S.chat.length ? '' : `<div class="card" style="padding:14px;font-size:14px;line-height:1.6">כתוב לי מה לעדכן, ואני אעשה את זה. אפשר גם לצרף סרטון, תמונה או חוזה (📎).<div class="muted" style="font-size:12px;margin-top:8px">דוגמאות:</div>${BOT_HINTS.map((h) => `<button class="chip" style="margin:4px 0 0 4px" data-act="botHint">${esc(h)}</button>`).join('')}</div>`}
     ${bubbles}
-    ${S.chatBusy ? '<div class="bubble bot muted">חושב…</div>' : ''}
+    ${S.chatBusy ? `<div class="bubble bot muted">${esc(S.chatStatus || 'חושב…')}</div>` : ''}
     ${S.chat.length ? '<button class="btn2" style="align-self:center;height:34px;font-size:12px;padding:0 14px" data-act="botClear">שיחה חדשה</button>' : ''}
   </div>
   <div class="composer">
     ${S.chatFiles.length ? `<div class="files">${S.chatFiles.map((f, i) => `<span class="chip on" data-act="botRm" data-i="${i}">📎 ${esc(f.name)} ✕</span>`).join('')}</div>` : ''}
     <div class="rowc">
-      <label class="ic" aria-label="צירוף קובץ">${ICON.clip}<input type="file" id="botfile" multiple accept="image/*,video/*,.pdf" style="display:none"></label>
+      <label class="ic" aria-label="צירוף קובץ">${ICON.clip}<input type="file" id="botfile" multiple accept="image/*,video/*,.pdf,.docx" style="display:none"></label>
       <textarea id="botin" rows="1" placeholder="מה לעדכן?">${esc(S.chatDraft || '')}</textarea>
       <button class="ic send" data-act="botSend" aria-label="שליחה" ${S.chatBusy ? 'disabled' : ''}>${ICON.send}</button>
     </div>
@@ -715,11 +739,18 @@ actions.botSend = async () => {
   try {
     const atts = [];
     for (const f of files) {
-      const bucket = f.type === 'application/pdf' ? 'contracts' : 'media';
+      const doc = f.type === 'application/pdf' || isWord(f);
+      const bucket = doc ? 'contracts' : 'media';
       const path = `inbox/${Date.now()}-${f.name.replace(/[^\w.]+/g, '_')}`;
-      const up = await sb.storage.from(bucket).upload(path, f, { contentType: f.type });
+      const up = await sb.storage.from(bucket).upload(path, f, { contentType: f.type || 'application/octet-stream' });
       if (up.error) throw new Error('upload');
-      atts.push({ path, bucket, name: f.name, type: f.type || 'application/octet-stream' });
+      const att = { path, bucket, name: f.name, type: f.type || 'application/octet-stream' };
+      if (isWord(f) || f.type.startsWith('image/')) {
+        const t = await readDocText(f, (msg) => { S.chatStatus = msg; if ((location.hash || '').startsWith('#/bot')) render(); });
+        if (t) att.text = t.slice(0, 50000);
+        S.chatStatus = '';
+      }
+      atts.push(att);
     }
     const history = S.chat.slice(0, -1).slice(-12).map((m) => ({ role: m.role, text: m.text }));
     const { data, error } = await sb.functions.invoke('bot', { body: { history, text, attachments: atts } });

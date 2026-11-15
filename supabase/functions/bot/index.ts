@@ -50,7 +50,7 @@ const SYSTEM = (today: string) => `אתה העוזר באפליקציה SAFA FAR
 - אל תמציא נתונים. נתוני משחקים, דקות, שערים וכרטיסים מגיעים אוטומטית מאתר ההתאחדות ולא מתעדכנים ידנית (חוץ מבישולים וסימון 'לא נספר').
 - ענה ישירות בתשובה עצמה. לעולם אל תזכיר כלים, חיפושים, מאגרים, מזהים (id) או איך מצאת את המידע. אחרי עדכון – שורה קצרה אחת מה עודכן.`;
 
-type Att = { path: string; bucket: string; name: string; type: string };
+type Att = { path: string; bucket: string; name: string; type: string; text?: string };  // text = read on the phone (photo OCR / Word)
 
 async function pdfText(blob: Blob): Promise<string> {
   const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
@@ -75,6 +75,11 @@ Deno.serve(async (req) => {
   // current user turn: text + attachments
   const content: unknown[] = [];
   for (const a of attachments.slice(0, 5)) {
+    if (a.text && !(key && /^image\//.test(a.type))) {  // already read on the phone (photo of a document / Word file)
+      const clean = a.text.trim();
+      content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 8000)}` : `לא נמצא טקסט קריא בקובץ ${a.name}.` });
+      continue;
+    }
     const isDoc = a.type === "application/pdf", isImg = /^image\/(jpeg|png|gif|webp)$/.test(a.type);
     if (isDoc || isImg) {
       const { data } = await sb.storage.from(a.bucket).download(a.path);
@@ -84,7 +89,7 @@ Deno.serve(async (req) => {
           content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 8000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אי אפשר לקרוא אותו בגרסה החינמית.` });
         } catch { content.push({ type: "text", text: `לא הצלחתי לקרוא את ${a.name}.` }); }
       } else if (data && !key && isImg) {
-        content.push({ type: "text", text: `(${a.name} היא תמונה. בגרסה החינמית אין קריאת תמונות; אם זה חוזה – בקש PDF.)` });
+        content.push({ type: "text", text: `(${a.name} היא תמונה ללא טקסט מזוהה.)` });
       } else if (data && data.size < (isDoc ? 8_000_000 : 4_500_000)) {
         const b64 = btoa(Array.from(new Uint8Array(await data.arrayBuffer()), (c) => String.fromCharCode(c)).join(""));
         content.push(isDoc ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
@@ -178,12 +183,13 @@ Deno.serve(async (req) => {
       }
       case "get_contracts": {
         const { data } = await sb.from("contracts").select("id,contract_type,start_date,end_date,minutes_commitment_pct,discounts,travel_allowance,salary,release_clause,extension_option,agent_fee,notes,confirmed,file_path").eq("player_id", i.player_id).order("end_date", { ascending: false });
-        return (data || []).map(({ file_path, ...c }: any) => ({ ...c, has_file: !!file_path, file_type: file_path ? (file_path.toLowerCase().endsWith(".pdf") ? "pdf" : "image") : null }));
+        return (data || []).map(({ file_path, ...c }: any) => ({ ...c, has_file: !!file_path }));
       }
       case "read_contract_text": {
-        const { data: c } = await sb.from("contracts").select("file_path").eq("id", i.contract_id).maybeSingle();
+        const { data: c } = await sb.from("contracts").select("file_path,file_text").eq("id", i.contract_id).maybeSingle();
+        if (c?.file_text && c.file_text.trim().length > 40) return { text: c.file_text.slice(0, 8000) };
         if (!c?.file_path) return { error: "אין קובץ לחוזה הזה" };
-        if (!c.file_path.toLowerCase().endsWith(".pdf")) return { error: "הקובץ הוא תמונה – אי אפשר לקרוא אותו בגרסה החינמית" };
+        if (!c.file_path.toLowerCase().endsWith(".pdf")) return { error: "לא נשמר טקסט לקובץ הזה. אפשר להעלות אותו שוב בלשונית החוזים." };
         const { data } = await sb.storage.from("contracts").download(c.file_path);
         if (!data) return { error: "לא הצלחתי לפתוח את הקובץ" };
         const t = await pdfText(data);
@@ -199,6 +205,7 @@ Deno.serve(async (req) => {
             if (!up.error) { await sb.storage.from(att.bucket).remove([att.path]); i.file_path = to; }
           }
         }
+        if (att?.text) i.file_text = att.text.slice(0, 50000);
         actions.push({ type: "contract", fields: i });
         return { ok: true, note: "הטופס מוצג לסוכן לאישור" };
       }
