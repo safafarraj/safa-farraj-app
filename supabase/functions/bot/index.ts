@@ -1,9 +1,11 @@
 // In-app assistant: talks Hebrew with the agent and updates the app's data with tools.
-// Runs as a Supabase Edge Function. Uses the caller's own login (RLS applies), and the
-// ANTHROPIC_API_KEY secret that the owner set in the Supabase dashboard.
+// Runs as a Supabase Edge Function. Uses the caller's own login (RLS applies).
+// Model: GROQ_API_KEY (free) or ANTHROPIC_API_KEY (paid) secret set in the Supabase dashboard.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
-const MODEL = "claude-sonnet-5-5";
+const CLAUDE_MODEL = "claude-sonnet-5-5";
+// free option: Groq (no training on data, no retention by default). Separate per-model limits -> fallback model.
+const GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -16,7 +18,7 @@ const TOOLS = [
   { name: "list_players", description: "כל השחקנים הפעילים: id, שם, סוג (mine/tracked), קבוצה, ליגה, עמדה, רגל, תאריכי לידה.", input_schema: { type: "object", properties: {} } },
   { name: "add_player", description: "הוספת שחקן חדש לפי קישור לפרופיל באתר ההתאחדות או player_id. השרת ימשוך את כל הנתונים שלו (כולל עונות קודמות) תוך כ-10–20 דקות.",
     input_schema: { type: "object", properties: { ifa: { type: "string", description: "קישור או מספר player_id" }, kind: { type: "string", enum: ["mine", "tracked"] } }, required: ["ifa", "kind"] } },
-  { name: "update_player", description: "עדכון פרטים ידניים של שחקן. תאריכים בפורמט YYYY-MM-DD. kind מעביר בין 'שחקנים שלי' ל'במעקב'.",
+  { name: "update_player", description: "עדכון פרטים ידניים של שחקן. תאריכים בפורמט YYYY-MM-DD. kind מעביר בין 'שחקנים שלי' ל'במעקב'. לשלוח רק שדות שצריך לשנות.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, position: { type: "string" }, strong_foot: { type: "string", enum: ["ימין", "שמאל", "שתיהן"] }, birth_date: { type: "string" }, coach_birth_date: { type: "string" }, kind: { type: "string", enum: ["mine", "tracked"] } }, required: ["player_id"] } },
   { name: "remove_player", description: "הסרת שחקן מהאפליקציה (מפסיק מעקב, הנתונים נשמרים). רק אחרי שהסוכן אישר במפורש בשיחה.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, confirmed_by_user: { type: "boolean" } }, required: ["player_id", "confirmed_by_user"] } },
@@ -38,7 +40,7 @@ const SYSTEM = (today: string) => `אתה העוזר באפליקציה SAFA FAR
 ענה תמיד בעברית, קצר וענייני. בצע את מה שהסוכן מבקש בעזרת הכלים.
 - כשמוזכר שחקן בשם, השתמש ב-list_players כדי למצוא את ה-id. אם יש ספק לאיזה שחקן הכוונה – שאל.
 - כשמוזכר משחק ("המשחק נגד X", "שבת שעברה") – מצא אותו עם find_games לפני עדכון.
-- קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה (PDF/תמונה של מסמך) → קרא אותו וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס.
+- קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה → קרא את התוכן וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס.
 - הסרת שחקן רק אחרי אישור מפורש בשיחה.
 - אל תמציא נתונים. נתוני משחקים, דקות, שערים וכרטיסים מגיעים אוטומטית מאתר ההתאחדות ולא מתעדכנים ידנית (חוץ מבישולים וסימון 'לא נספר').
 - בסוף כל פעולה אמור בשורה מה עשית.`;
@@ -48,7 +50,8 @@ type Att = { path: string; bucket: string; name: string; type: string };
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const key = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!key) return json({ reply: "הבוט עוד לא הופעל: חסר מפתח ANTHROPIC_API_KEY בהגדרות Supabase." });
+  const groqKey = Deno.env.get("GROQ_API_KEY");
+  if (!key && !groqKey) return json({ reply: "הבוט עוד לא הופעל: חסר מפתח GROQ_API_KEY (חינם) בהגדרות Supabase." });
   const auth = req.headers.get("Authorization") || "";
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY") || "sb_publishable_L6cOYyrPJLlkVc045WG6Bg_wFXjEYoh", { global: { headers: { Authorization: auth } } });
   const { data: ok } = await sb.rpc("is_app_user");
@@ -57,13 +60,23 @@ Deno.serve(async (req) => {
   const { history = [], text = "", attachments = [] } = await req.json() as { history: { role: string; text: string }[]; text: string; attachments: Att[] };
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jerusalem" });
 
-  // current user turn: text + attachments (documents/images are shown to the model, videos only by name)
+  // current user turn: text + attachments
   const content: unknown[] = [];
   for (const a of attachments.slice(0, 5)) {
     const isDoc = a.type === "application/pdf", isImg = /^image\/(jpeg|png|gif|webp)$/.test(a.type);
     if (isDoc || isImg) {
       const { data } = await sb.storage.from(a.bucket).download(a.path);
-      if (data && data.size < (isDoc ? 8_000_000 : 4_500_000)) {
+      if (data && !key && isDoc) {  // free model can't read files: extract the PDF text
+        try {
+          const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
+          const pdf = await getDocumentProxy(new Uint8Array(await data.arrayBuffer()));
+          const { text: t } = await extractText(pdf, { mergePages: true });
+          const clean = String(t || "").trim();
+          content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 12000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אי אפשר לקרוא אותו בגרסה החינמית.` });
+        } catch { content.push({ type: "text", text: `לא הצלחתי לקרוא את ${a.name}.` }); }
+      } else if (data && !key && isImg) {
+        content.push({ type: "text", text: `(${a.name} היא תמונה. בגרסה החינמית אין קריאת תמונות; אם זה חוזה – בקש PDF.)` });
+      } else if (data && data.size < (isDoc ? 8_000_000 : 4_500_000)) {
         const b64 = btoa(Array.from(new Uint8Array(await data.arrayBuffer()), (c) => String.fromCharCode(c)).join(""));
         content.push(isDoc ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
           : { type: "image", source: { type: "base64", media_type: a.type, data: b64 } });
@@ -171,31 +184,65 @@ Deno.serve(async (req) => {
     return { error: "unknown tool" };
   };
 
-  for (let step = 0; step < 8; step++) {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: SYSTEM(today), tools: TOOLS, messages }),
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      console.error("anthropic", r.status, t.slice(0, 300));
-      const msg = r.status === 401 ? "המפתח של Claude לא תקין." : /credit|billing/i.test(t) ? "נגמר הקרדיט בחשבון Claude API. אפשר להטעין ב-console.anthropic.com." : "שגיאה בחיבור ל-Claude. נסה שוב בעוד רגע.";
-      return json({ reply: msg, actions, changed });
-    }
-    const out = await r.json();
-    messages.push({ role: "assistant", content: out.content });
-    if (out.stop_reason !== "tool_use") {
-      const reply = out.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim();
-      return json({ reply: reply || "בוצע.", actions, changed });
-    }
-    const results = [];
-    for (const c of out.content) if (c.type === "tool_use") {
+  const errMsg = (status: number, t: string) => status === 401 ? "מפתח ה-API לא תקין." : status === 429 ? "הגעתי למגבלת השימוש החינמית לרגע. נסה שוב בעוד דקה." : /credit|billing/i.test(t) ? "נגמר הקרדיט בחשבון ה-API." : "שגיאה בחיבור למודל. נסה שוב בעוד רגע.";
+  const execTools = async (calls: { id: string; name: string; input: any }[]) => {
+    const out: { id: string; content: string }[] = [];
+    for (const c of calls) {
       let res: unknown;
-      try { res = await run(c.name, c.input); } catch (e) { res = { error: String(e) }; }
-      results.push({ type: "tool_result", tool_use_id: c.id, content: JSON.stringify(res).slice(0, 20000) });
+      const input = Object.fromEntries(Object.entries(c.input || {}).filter(([, v]) => v !== null && v !== undefined && v !== ""));  // models sometimes send empty optional fields
+      try { res = await run(c.name, input); } catch (e) { res = { error: String(e) }; }
+      out.push({ id: c.id, content: JSON.stringify(res).slice(0, 12000) });
     }
-    messages.push({ role: "user", content: results });
+    return out;
+  };
+
+  if (key) {  // ---- Claude (paid)
+    for (let step = 0; step < 8; step++) {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1500, system: SYSTEM(today), tools: TOOLS, messages }),
+      });
+      if (!r.ok) { const t = await r.text(); console.error("anthropic", r.status, t.slice(0, 300)); return json({ reply: errMsg(r.status, t), actions, changed }); }
+      const out = await r.json();
+      messages.push({ role: "assistant", content: out.content });
+      if (out.stop_reason !== "tool_use") {
+        const reply = out.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim();
+        return json({ reply: reply || "בוצע.", actions, changed });
+      }
+      const res = await execTools(out.content.filter((c: any) => c.type === "tool_use").map((c: any) => ({ id: c.id, name: c.name, input: c.input })));
+      messages.push({ role: "user", content: res.map((x) => ({ type: "tool_result", tool_use_id: x.id, content: x.content })) });
+    }
+  } else {  // ---- Groq (free, OpenAI-compatible)
+    const oaTools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+    const flat = (c: any) => typeof c === "string" ? c : (c as any[]).filter((x) => x.type === "text").map((x) => x.text).join("\n");
+    const msgs: any[] = [{ role: "system", content: SYSTEM(today) }, ...messages.map((m) => ({ role: m.role, content: flat(m.content) }))];
+    let mi = 0;
+    for (let step = 0; step < 8; step++) {
+      let r: Response | null = null, t = "";
+      for (let attempt = 0; attempt < 4; attempt++) {
+        r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${groqKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: GROQ_MODELS[mi], messages: msgs, tools: oaTools, tool_choice: "auto", temperature: 0.2, max_tokens: 1200 }),
+        });
+        if (r.ok) break;
+        t = await r.text();
+        console.error("groq", GROQ_MODELS[mi], r.status, t.slice(0, 300));
+        if (r.status === 429 && mi < GROQ_MODELS.length - 1) { mi++; continue; }
+        if (r.status === 429 || r.status >= 500) { await new Promise((ok) => setTimeout(ok, 4000)); continue; }
+        if (r.status === 400 && /tool|function/i.test(t)) { continue; }
+        break;
+      }
+      if (!r || !r.ok) return json({ reply: errMsg(r?.status || 500, t), actions, changed });
+      const out = await r.json();
+      const msg = out.choices?.[0]?.message || {};
+      const calls = msg.tool_calls || [];
+      msgs.push({ role: "assistant", content: msg.content || "", ...(calls.length ? { tool_calls: calls } : {}) });
+      if (!calls.length) return json({ reply: (msg.content || "בוצע.").trim(), actions, changed });
+      const res = await execTools(calls.map((c: any) => { let input = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* bad json */ } return { id: c.id, name: c.function.name, input }; }));
+      for (const x of res) msgs.push({ role: "tool", tool_call_id: x.id, content: x.content });
+    }
   }
   return json({ reply: "הבקשה ארוכה מדי, נסה לפצל אותה.", actions, changed });
 });
