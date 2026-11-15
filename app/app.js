@@ -124,10 +124,10 @@ function shell(title, body, { back = false, tab = 'home' } = {}) {
     <button class="icon" aria-label="מרכז התראות" data-go="#/alerts">${ICON.bell}${S.unread ? `<span class="badge">${S.unread > 99 ? '99+' : S.unread}</span>` : ''}</button>
   </header>
   <main>${body}</main>
+  ${tab === 'bot' ? '' : `<button class="fab" data-go="#/bot" aria-label="עוזר">${ICON.bot}</button>`}
   <nav class="bottom">
     <button class="${tab === 'home' ? 'on' : ''}" data-go="#/">${ICON.home}<span>בית</span></button>
     <button class="${tab === 'schedule' ? 'on' : ''}" data-go="#/schedule">${ICON.cal}<span>לוח משחקים</span></button>
-    <button class="${tab === 'bot' ? 'on' : ''}" data-go="#/bot">${ICON.bot}<span>עוזר</span></button>
     <button class="${tab === 'settings' ? 'on' : ''}" data-go="#/settings">${ICON.gear}<span>הגדרות</span></button>
   </nav>`;
 }
@@ -705,7 +705,7 @@ route(/^\/bot$/, () => {
       <textarea id="botin" rows="1" placeholder="מה לעדכן?">${esc(S.chatDraft || '')}</textarea>
       <button class="ic send" data-act="botSend" aria-label="שליחה" ${S.chatBusy ? 'disabled' : ''}>${ICON.send}</button>
     </div>
-  </div>`, { tab: 'bot' });
+  </div>`, { tab: 'bot', back: true });
   const ta = document.getElementById('botin');
   ta.oninput = () => { S.chatDraft = ta.value; ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; };
   document.getElementById('botfile').onchange = (e) => { S.chatFiles.push(...e.target.files); render(); };
