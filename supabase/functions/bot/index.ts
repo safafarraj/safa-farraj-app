@@ -16,6 +16,8 @@ const json = (body: unknown, status = 200) =>
 
 const TOOLS = [
   { name: "list_players", description: "כל השחקנים הפעילים: id, שם, סוג (mine/tracked), קבוצה, ליגה, עמדה, רגל, תאריכי לידה.", input_schema: { type: "object", properties: {} } },
+  { name: "player_details", description: "כל המידע על שחקן: פרטים, היסטוריית עונות (קבוצה, ליגה, שערים, כרטיסים), אנשי קשר, הערות, סרטונים/תמונות וסיכום חוזים. לשאלות מידע כלליות.",
+    input_schema: { type: "object", properties: { player_id: { type: "integer" } }, required: ["player_id"] } },
   { name: "add_player", description: "הוספת שחקן חדש לפי קישור לפרופיל באתר ההתאחדות או player_id. השרת ימשוך את כל הנתונים שלו (כולל עונות קודמות) תוך כ-10–20 דקות.",
     input_schema: { type: "object", properties: { ifa: { type: "string", description: "קישור או מספר player_id" }, kind: { type: "string", enum: ["mine", "tracked"] } }, required: ["ifa", "kind"] } },
   { name: "update_player", description: "עדכון פרטים ידניים של שחקן. תאריכים בפורמט YYYY-MM-DD. kind מעביר בין 'שחקנים שלי' ל'במעקב'. לשלוח רק שדות שצריך לשנות.",
@@ -45,6 +47,7 @@ const SYSTEM = (today: string) => `אתה העוזר באפליקציה SAFA FAR
 - כשמוזכר שחקן בשם, השתמש ב-list_players כדי למצוא את ה-id. אם יש ספק לאיזה שחקן הכוונה – שאל.
 - כשמוזכר משחק ("המשחק נגד X", "שבת שעברה") – מצא אותו עם find_games לפני עדכון.
 - קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה → קרא את התוכן וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס.
+- שאלות מידע על שחקן: player_details; על משחקים, דקות ונתוני עונה: find_games.
 - שאלות על חוזה קיים: get_contracts, ואם התשובה לא בשדות – read_contract_text.
 - הסרת שחקן רק אחרי אישור מפורש בשיחה.
 - אל תמציא נתונים. נתוני משחקים, דקות, שערים וכרטיסים מגיעים אוטומטית מאתר ההתאחדות ולא מתעדכנים ידנית (חוץ מבישולים וסימון 'לא נספר').
@@ -112,6 +115,18 @@ Deno.serve(async (req) => {
       case "list_players": {
         const { data } = await sb.from("players").select("id,name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,coach_name,coach_birth_date,shirt_number,ifa_player_id").eq("active", true).order("id");
         return data;
+      }
+      case "player_details": {
+        const id = i.player_id;
+        const [p, seasons, contacts, notes, media, contracts] = await Promise.all([
+          sb.from("players").select("name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,citizenship,coach_name,coach_birth_date,shirt_number").eq("id", id).maybeSingle(),
+          sb.from("player_seasons").select("season_label,team_name,league_name,goals,yellow_cards,red_cards").eq("player_id", id).order("season_id", { ascending: false }),
+          sb.from("contacts").select("role,name,phone").eq("player_id", id),
+          sb.from("notes").select("note_date,from_who,to_who,body").eq("player_id", id).order("note_date", { ascending: false }).limit(20),
+          sb.from("media").select("media_type,game_description,action_type,taken_on").eq("player_id", id).order("taken_on", { ascending: false }).limit(20),
+          sb.from("contracts").select("contract_type,start_date,end_date,minutes_commitment_pct").eq("player_id", id),
+        ]);
+        return { player: p.data, seasons: seasons.data, contacts: contacts.data, notes: notes.data, media: media.data, contracts: contracts.data };
       }
       case "add_player": {
         const m = String(i.ifa).match(/player_id=(\d+)/) || String(i.ifa).match(/^\s*(\d{4,})\s*$/);
