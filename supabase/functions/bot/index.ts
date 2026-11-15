@@ -196,7 +196,8 @@ Deno.serve(async (req) => {
         return t.length > 40 ? { text: t.slice(0, 8000) } : { error: "הקובץ הוא סריקה ללא טקסט" };
       }
       case "propose_contract": {
-        const att = attachments.find((a) => a.path === i.file_path);
+        const att = attachments.find((a) => a.path === i.file_path) || (attachments.length === 1 ? attachments[0] : undefined);
+        if (att && !i.file_path) i.file_path = att.path;
         if (att && att.bucket !== "contracts") {  // keep contract files in the contracts bucket
           const { data } = await sb.storage.from(att.bucket).download(att.path);
           if (data) {
