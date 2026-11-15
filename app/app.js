@@ -158,16 +158,6 @@ function modal(html) {
 // ---------------------------------------------------------------- views
 route(/^\/?$/, () => {
   const mine = S.players.filter((p) => p.kind === 'mine'), tracked = S.players.filter((p) => p.kind === 'tracked');
-  const today = todayIso();
-  const next = S.games.filter((g) => g.game_date >= today && S.players.some((p) => p.kind === 'mine' && p.ifa_team_id === g.ifa_team_id)).slice(0, 3);
-  const nextHtml = next.map((g) => {
-    const ps = S.players.filter((p) => p.ifa_team_id === g.ifa_team_id && p.kind === 'mine');
-    const v = perspective(ps[0], g);
-    return `<div class="card" style="padding:12px 14px;display:flex;gap:12px;align-items:center">
-      <div style="width:48px;text-align:center"><div class="num" style="font-size:24px;color:var(--lime)">${fmtDate(g.game_date)}</div><div class="muted" style="font-size:11px">יום ${dayName(g.game_date)}</div></div>
-      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px" class="ell">${esc(ps.map((x) => x.name).join(', '))}</div>
-      <div class="muted ell" style="font-size:12px">נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'}) · ${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'שעה טרם נקבעה'}</div></div></div>`;
-  }).join('') || '<div class="card muted" style="padding:14px;font-size:14px">אין משחקים קרובים בלוח.</div>';
   const now = new Date();
   shell('SAFA FARRAJ', `
   <div class="stack">
@@ -179,8 +169,6 @@ route(/^\/?$/, () => {
       <button data-go="#/tracked" class="pitch" style="text-align:right;border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:16px;height:168px;display:flex;flex-direction:column;justify-content:space-between">
         <span style="font-size:13px;font-weight:700">שחקנים במעקב</span><span class="num" style="font-size:88px;color:var(--lime)">${tracked.length}</span><span class="muted" style="font-size:12px;font-weight:600">כל השחקנים ←</span></button>
     </div>
-    <p class="sec">המשחקים הקרובים</p>
-    ${nextHtml}
     <p class="sec">היום</p>
     <div id="today" class="stack"><div class="spinner"></div></div>
   </div>`);
