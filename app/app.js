@@ -687,9 +687,10 @@ async function readDocText(file, onStatus) {
 
 // ---------------------------------------------------------------- in-app assistant (bot)
 const CHAT_KEY = 'sf-chat-v1';
-function chatLoad() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch { return []; } }
-function chatSave() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch { /* storage unavailable */ } }
-S.chat = chatLoad(); S.chatFiles = [];
+// the conversation lives only while the app is open: closing the app starts a fresh chat
+try { localStorage.removeItem(CHAT_KEY); } catch { /* storage unavailable */ }
+function chatSave() { /* not persisted on purpose */ }
+S.chat = []; S.chatFiles = [];
 
 route(/^\/bot$/, () => {
   const bubbles = S.chat.map((m) => `<div class="bubble ${m.role === 'user' ? 'me' : 'bot'}">${esc(m.text)}${m.atts?.length ? `<div class="att">📎 ${m.atts.map(esc).join(', ')}</div>` : ''}${m.contract ? `<div style="margin-top:8px"><button class="btn" style="height:38px;font-size:13px" data-act="botContract" data-i="${S.chat.indexOf(m)}">פתיחת טופס החוזה לאישור</button></div>` : ''}</div>`).join('');
