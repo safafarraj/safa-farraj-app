@@ -36,7 +36,7 @@ const TOOLS = [
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, file_path: { type: "string" }, media_type: { type: "string", enum: ["video", "photo"] }, game_description: { type: "string" }, action_type: { type: "string", description: "שער, בישול, דריבל, פעולת הגנה, מסירה, אחר" }, taken_on: { type: "string" } }, required: ["player_id", "file_path", "media_type"] } },
   { name: "get_contracts", description: "החוזים השמורים של שחקן (סוכן/מועדון): תאריכים, אחוז דקות, שכר, סעיפים, והאם יש קובץ. לשאלות על חוזה קיים.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" } }, required: ["player_id"] } },
-  { name: "read_contract_text", description: "קריאת הטקסט המלא של קובץ חוזה שמור (PDF), לשאלות על סעיפים שלא מופיעים בשדות. contract_id מתוך get_contracts.",
+  { name: "read_contract_text", description: "קריאת הטקסט המלא של קובץ חוזה שמור, לשאלות על סעיפים שלא מופיעים בשדות. contract_id מתוך get_contracts.",
     input_schema: { type: "object", properties: { contract_id: { type: "integer" } }, required: ["contract_id"] } },
   { name: "propose_contract", description: "הצעת נתוני חוזה שחולצו מקובץ שצורף. לא נשמר! הסוכן יראה טופס ויאשר בעצמו. שדה שלא מופיע בחוזה – להשמיט.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, contract_type: { type: "string", enum: ["agent", "club"] }, file_path: { type: "string" }, start_date: { type: "string" }, end_date: { type: "string" }, minutes_commitment_pct: { type: "number" }, discounts: { type: "string" }, travel_allowance: { type: "string" }, salary: { type: "string" }, release_clause: { type: "string" }, extension_option: { type: "string" }, agent_fee: { type: "string" } }, required: ["player_id", "contract_type"] } },
@@ -46,7 +46,7 @@ const SYSTEM = (today: string) => `אתה העוזר באפליקציה SAFA FAR
 ענה תמיד בעברית, קצר וענייני. בצע את מה שהסוכן מבקש בעזרת הכלים.
 - כשמוזכר שחקן בשם, השתמש ב-list_players כדי למצוא את ה-id. אם יש ספק לאיזה שחקן הכוונה – שאל.
 - כשמוזכר משחק ("המשחק נגד X", "שבת שעברה") – מצא אותו עם find_games לפני עדכון.
-- קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה → קרא את התוכן וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס.
+- קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה (PDF, Word או צילום של מסמך) → קרא את התוכן וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס. טקסט מצילום עלול להכיל שגיאות זיהוי – אם משהו לא ברור, אמור זאת.
 - שאלות מידע על שחקן: player_details; על משחקים, דקות ונתוני עונה: find_games.
 - שאלות על חוזה קיים: get_contracts, ואם התשובה לא בשדות – read_contract_text.
 - הסרת שחקן רק אחרי אישור מפורש בשיחה.
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       if (data && !key && isDoc) {  // free model can't read files: extract the PDF text
         try {
           const clean = await pdfText(data);
-          content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 8000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אי אפשר לקרוא אותו בגרסה החינמית.` });
+          content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 8000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אפשר לצלם את העמודים ולשלוח כתמונות.` });
         } catch { content.push({ type: "text", text: `לא הצלחתי לקרוא את ${a.name}.` }); }
       } else if (data && !key && isImg) {
         content.push({ type: "text", text: `(${a.name} היא תמונה ללא טקסט מזוהה.)` });
