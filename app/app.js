@@ -23,6 +23,7 @@ const ICON = {
   bot: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg>',
   clip: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
   send: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="transform:scaleX(-1)"><path d="M3 20.5 21 12 3 3.5l2.5 7L15 12l-9.5 1.5z"/></svg>',
+  doc: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></svg>',
   play: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
 };
 
@@ -128,6 +129,7 @@ function shell(title, body, { back = false, tab = 'home' } = {}) {
   <nav class="bottom">
     <button class="${tab === 'home' ? 'on' : ''}" data-go="#/">${ICON.home}<span>בית</span></button>
     <button class="${tab === 'schedule' ? 'on' : ''}" data-go="#/schedule">${ICON.cal}<span>לוח משחקים</span></button>
+    <button class="${tab === 'policy' ? 'on' : ''}" data-go="#/policy">${ICON.doc}<span>מדיניות</span></button>
     <button class="${tab === 'settings' ? 'on' : ''}" data-go="#/settings">${ICON.gear}<span>הגדרות</span></button>
   </nav>`;
 }
@@ -688,12 +690,11 @@ const CHAT_KEY = 'sf-chat-v1';
 function chatLoad() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch { return []; } }
 function chatSave() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch { /* storage unavailable */ } }
 S.chat = chatLoad(); S.chatFiles = [];
-const BOT_HINTS = ['תוסיף שחקן במעקב: <קישור מאתר ההתאחדות>', 'לסלים יש בישול במשחק נגד בית"ר חיפה', 'עמדה של אליא: קשר, רגל ימין', 'המשחק האחרון של אליא לא נספר – היה בנבחרת'];
 
 route(/^\/bot$/, () => {
   const bubbles = S.chat.map((m) => `<div class="bubble ${m.role === 'user' ? 'me' : 'bot'}">${esc(m.text)}${m.atts?.length ? `<div class="att">📎 ${m.atts.map(esc).join(', ')}</div>` : ''}${m.contract ? `<div style="margin-top:8px"><button class="btn" style="height:38px;font-size:13px" data-act="botContract" data-i="${S.chat.indexOf(m)}">פתיחת טופס החוזה לאישור</button></div>` : ''}</div>`).join('');
   shell('עוזר', `<div class="chat" id="chat">
-    ${S.chat.length ? '' : `<div class="card" style="padding:14px;font-size:14px;line-height:1.6">כתוב לי מה לעדכן, ואני אעשה את זה. אפשר גם לצרף סרטון, תמונה או חוזה (📎).<div class="muted" style="font-size:12px;margin-top:8px">דוגמאות:</div>${BOT_HINTS.map((h) => `<button class="chip" style="margin:4px 0 0 4px" data-act="botHint">${esc(h)}</button>`).join('')}</div>`}
+    ${S.chat.length ? '' : '<div class="bubble bot">במה אוכל לעזור?</div>'}
     ${bubbles}
     ${S.chatBusy ? `<div class="bubble bot muted">${esc(S.chatStatus || 'חושב…')}</div>` : ''}
     ${S.chat.length ? '<button class="btn2" style="align-self:center;height:34px;font-size:12px;padding:0 14px" data-act="botClear">שיחה חדשה</button>' : ''}
@@ -711,7 +712,6 @@ route(/^\/bot$/, () => {
   document.getElementById('botfile').onchange = (e) => { S.chatFiles.push(...e.target.files); render(); };
   window.scrollTo(0, document.body.scrollHeight);
 });
-actions.botHint = (el) => { S.chatDraft = el.textContent.replace(/<.*?>/, ''); render(); setTimeout(() => document.getElementById('botin')?.focus(), 50); };
 actions.botRm = (el) => { S.chatFiles.splice(+el.dataset.i, 1); render(); };
 actions.botClear = () => { S.chat = []; chatSave(); render(); };
 actions.botContract = (el) => {
@@ -782,17 +782,33 @@ const POLICY = [
 ];
 
 route(/^\/alerts$/, async () => {
-  const pol = S.ui.alertsTab === 'policy';
-  shell('מרכז התראות', `<div class="stack">
-    <div class="seg"><button class="${pol ? '' : 'on'}" data-act="alertsTab" data-t="list">התראות</button><button class="${pol ? 'on' : ''}" data-act="alertsTab" data-t="policy">מדיניות התראות</button></div>
-    <div id="alist" class="stack">${pol ? `<div class="card">${POLICY.map(([t, d], i) => `<div class="row" style="align-items:flex-start;justify-content:flex-start"><span class="num" style="width:28px;font-size:30px;color:var(--lime);text-align:center;flex-shrink:0">${i + 1}</span><div><div style="font-weight:700">${t}</div><div class="muted" style="font-size:13px;line-height:1.45">${d}</div></div></div>`).join('')}</div>` : '<div class="spinner"></div>'}</div>
-  </div>`, { back: true });
-  if (pol) return;
+  shell('מרכז התראות', `<div class="stack"><div id="alist" class="stack"><div class="spinner"></div></div></div>`, { back: true });
   const { data } = await sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(100);
   document.getElementById('alist').innerHTML = (data || []).map(alertCard).join('') || '<div class="card muted" style="padding:14px;font-size:14px">אין עדיין התראות. הן יתחילו להגיע מהמשחק הבא.</div>';
   if (S.unread) { await sb.from('notifications').update({ read_at: new Date().toISOString() }).is('read_at', null); S.unread = 0; }
 });
-actions.alertsTab = (el) => { S.ui.alertsTab = el.dataset.t; render(); };
+
+// ---------------------------------------------------------------- policies (alerts + assistant)
+const BOT_POLICY = [
+  ['הוספת שחקן', 'הדבקת קישור לפרופיל באתר ההתאחדות ובחירה: שחקנים שלי או במעקב. כל הנתונים, כולל עונות קודמות, נטענים אוטומטית תוך כ־20 דקות.'],
+  ['עדכון פרטי שחקן', 'עמדה, רגל חזקה, תאריך לידה מלא, יום הולדת של המאמן, והעברה בין שחקנים שלי למעקב.'],
+  ['בישולים ומשחקים שלא נספרים', 'הוספת בישול למשחק, וסימון משחק שלא ייספר בחישוב דקות החוזה (פציעה, נבחרת, הרחקה).'],
+  ['סרטונים ותמונות', 'צירוף קובץ ושיוך לשחקן, עם המשחק ומהות הפעולה. עד כ־50MB לקובץ.'],
+  ['חוזים', 'קריאת חוזה (PDF, Word או צילום) ומילוי טופס החוזה לאישורך. שום דבר לא נשמר בלי אישור.'],
+  ['שאלות על חוזים', 'תאריכי סיום, אחוז דקות, עמלה, שכר וכל סעיף בחוזה ששמור במערכת.'],
+  ['הערות ואנשי קשר', 'הוספת הערה (ממי ולמי) ואיש קשר עם טלפון.'],
+  ['הסרת שחקן', 'רק אחרי אישור מפורש שלך בשיחה. הנתונים נשמרים.'],
+  ['מה העוזר לא עושה', 'לא משנה נתונים שמגיעים מאתר ההתאחדות (משחקים, דקות, שערים, כרטיסים) – הם מתעדכנים אוטומטית.'],
+];
+const policyList = (list) => `<div class="card">${list.map(([t, d], i) => `<div class="row" style="align-items:flex-start;justify-content:flex-start"><span class="num" style="width:28px;font-size:30px;color:var(--lime);text-align:center;flex-shrink:0">${i + 1}</span><div><div style="font-weight:700">${t}</div><div class="muted" style="font-size:13px;line-height:1.45">${d}</div></div></div>`).join('')}</div>`;
+route(/^\/policy$/, () => {
+  const t = S.ui.policyTab || 'alerts';
+  shell('מדיניות', `<div class="stack">
+    <div class="seg"><button class="${t === 'alerts' ? 'on' : ''}" data-act="policyTab" data-t="alerts">התראות</button><button class="${t === 'bot' ? 'on' : ''}" data-act="policyTab" data-t="bot">עוזר</button></div>
+    ${policyList(t === 'bot' ? BOT_POLICY : POLICY)}
+  </div>`, { tab: 'policy' });
+});
+actions.policyTab = (el) => { S.ui.policyTab = el.dataset.t; render(); };
 
 // ---------------------------------------------------------------- settings & push
 route(/^\/settings$/, async () => {
