@@ -32,6 +32,10 @@ const TOOLS = [
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, role: { type: "string" }, name: { type: "string" }, phone: { type: "string" } }, required: ["player_id", "role"] } },
   { name: "attach_media", description: "שיוך סרטון/תמונה שהסוכן צירף בהודעה לשחקן. file_path מגיע מרשימת הקבצים המצורפים.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, file_path: { type: "string" }, media_type: { type: "string", enum: ["video", "photo"] }, game_description: { type: "string" }, action_type: { type: "string", description: "שער, בישול, דריבל, פעולת הגנה, מסירה, אחר" }, taken_on: { type: "string" } }, required: ["player_id", "file_path", "media_type"] } },
+  { name: "get_contracts", description: "החוזים השמורים של שחקן (סוכן/מועדון): תאריכים, אחוז דקות, שכר, סעיפים, והאם יש קובץ. לשאלות על חוזה קיים.",
+    input_schema: { type: "object", properties: { player_id: { type: "integer" } }, required: ["player_id"] } },
+  { name: "read_contract_text", description: "קריאת הטקסט המלא של קובץ חוזה שמור (PDF), לשאלות על סעיפים שלא מופיעים בשדות. contract_id מתוך get_contracts.",
+    input_schema: { type: "object", properties: { contract_id: { type: "integer" } }, required: ["contract_id"] } },
   { name: "propose_contract", description: "הצעת נתוני חוזה שחולצו מקובץ שצורף. לא נשמר! הסוכן יראה טופס ויאשר בעצמו. שדה שלא מופיע בחוזה – להשמיט.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, contract_type: { type: "string", enum: ["agent", "club"] }, file_path: { type: "string" }, start_date: { type: "string" }, end_date: { type: "string" }, minutes_commitment_pct: { type: "number" }, discounts: { type: "string" }, travel_allowance: { type: "string" }, salary: { type: "string" }, release_clause: { type: "string" }, extension_option: { type: "string" }, agent_fee: { type: "string" } }, required: ["player_id", "contract_type"] } },
 ];
@@ -41,11 +45,19 @@ const SYSTEM = (today: string) => `אתה העוזר באפליקציה SAFA FAR
 - כשמוזכר שחקן בשם, השתמש ב-list_players כדי למצוא את ה-id. אם יש ספק לאיזה שחקן הכוונה – שאל.
 - כשמוזכר משחק ("המשחק נגד X", "שבת שעברה") – מצא אותו עם find_games לפני עדכון.
 - קבצים מצורפים: סרטון/תמונה → attach_media (שאל לאיזה שחקן אם לא ברור; את מהות הפעולה והמשחק אפשר להשמיט אם לא נאמרו). חוזה → קרא את התוכן וקרא ל-propose_contract עם השדות שמופיעים בו; הסוכן יאשר בטופס.
+- שאלות על חוזה קיים: get_contracts, ואם התשובה לא בשדות – read_contract_text.
 - הסרת שחקן רק אחרי אישור מפורש בשיחה.
 - אל תמציא נתונים. נתוני משחקים, דקות, שערים וכרטיסים מגיעים אוטומטית מאתר ההתאחדות ולא מתעדכנים ידנית (חוץ מבישולים וסימון 'לא נספר').
 - ענה ישירות בתשובה עצמה. לעולם אל תזכיר כלים, חיפושים, מאגרים, מזהים (id) או איך מצאת את המידע. אחרי עדכון – שורה קצרה אחת מה עודכן.`;
 
 type Att = { path: string; bucket: string; name: string; type: string };
+
+async function pdfText(blob: Blob): Promise<string> {
+  const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
+  const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
+  const { text } = await extractText(pdf, { mergePages: true });
+  return String(text || "").trim();
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -68,11 +80,8 @@ Deno.serve(async (req) => {
       const { data } = await sb.storage.from(a.bucket).download(a.path);
       if (data && !key && isDoc) {  // free model can't read files: extract the PDF text
         try {
-          const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
-          const pdf = await getDocumentProxy(new Uint8Array(await data.arrayBuffer()));
-          const { text: t } = await extractText(pdf, { mergePages: true });
-          const clean = String(t || "").trim();
-          content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 12000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אי אפשר לקרוא אותו בגרסה החינמית.` });
+          const clean = await pdfText(data);
+          content.push({ type: "text", text: clean.length > 40 ? `תוכן הקובץ ${a.name}:\n${clean.slice(0, 8000)}` : `הקובץ ${a.name} הוא סריקה ללא טקסט – אי אפשר לקרוא אותו בגרסה החינמית.` });
         } catch { content.push({ type: "text", text: `לא הצלחתי לקרוא את ${a.name}.` }); }
       } else if (data && !key && isImg) {
         content.push({ type: "text", text: `(${a.name} היא תמונה. בגרסה החינמית אין קריאת תמונות; אם זה חוזה – בקש PDF.)` });
@@ -166,6 +175,19 @@ Deno.serve(async (req) => {
         const { error } = await sb.from("media").insert({ ...i, taken_on: i.taken_on || today });
         if (!error) changed = true;
         return error ? { error: error.message } : { ok: true };
+      }
+      case "get_contracts": {
+        const { data } = await sb.from("contracts").select("id,contract_type,start_date,end_date,minutes_commitment_pct,discounts,travel_allowance,salary,release_clause,extension_option,agent_fee,notes,confirmed,file_path").eq("player_id", i.player_id).order("end_date", { ascending: false });
+        return (data || []).map(({ file_path, ...c }: any) => ({ ...c, has_file: !!file_path, file_type: file_path ? (file_path.toLowerCase().endsWith(".pdf") ? "pdf" : "image") : null }));
+      }
+      case "read_contract_text": {
+        const { data: c } = await sb.from("contracts").select("file_path").eq("id", i.contract_id).maybeSingle();
+        if (!c?.file_path) return { error: "אין קובץ לחוזה הזה" };
+        if (!c.file_path.toLowerCase().endsWith(".pdf")) return { error: "הקובץ הוא תמונה – אי אפשר לקרוא אותו בגרסה החינמית" };
+        const { data } = await sb.storage.from("contracts").download(c.file_path);
+        if (!data) return { error: "לא הצלחתי לפתוח את הקובץ" };
+        const t = await pdfText(data);
+        return t.length > 40 ? { text: t.slice(0, 8000) } : { error: "הקובץ הוא סריקה ללא טקסט" };
       }
       case "propose_contract": {
         const att = attachments.find((a) => a.path === i.file_path);
