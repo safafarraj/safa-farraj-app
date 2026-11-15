@@ -47,7 +47,7 @@ label.lbl{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--
 .top .title{flex:1;font-size:30px;padding:4px 4px 0}
 .badge{position:absolute;top:6px;left:6px;min-width:18px;height:18px;border-radius:9px;background:var(--red);color:var(--bg);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
 main{padding:4px 16px calc(90px + var(--safe-bottom));max-width:560px;margin:0 auto}
-nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--safe-bottom)}
+nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--safe-bottom)}
 nav.bottom button{height:64px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px;font-weight:700;color:var(--muted)}
 nav.bottom button.on{color:var(--lime)}
 .modal-bg{position:fixed;inset:0;z-index:20;background:rgba(4,9,6,.72);display:flex;align-items:flex-end;justify-content:center}
@@ -57,3 +57,16 @@ nav.bottom button.on{color:var(--lime)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .photo{object-fit:cover;background:#1F3A2A}
 .crest{object-fit:contain;background:#fff;border-radius:50%}
+
+/* bot chat */
+.chat{display:flex;flex-direction:column;gap:8px;padding-bottom:150px}
+.bubble{max-width:86%;padding:10px 12px;border-radius:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.bubble.me{align-self:flex-start;background:var(--lime);color:var(--bg);border-bottom-right-radius:4px}
+.bubble.bot{align-self:flex-end;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:4px}
+.bubble .att{font-size:12px;opacity:.8;margin-top:4px}
+.composer{position:fixed;left:0;right:0;bottom:calc(64px + var(--safe-bottom));z-index:6;background:var(--bg);border-top:1px solid var(--line);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.composer .rowc{display:flex;gap:8px;align-items:flex-end;max-width:560px;margin:0 auto;width:100%}
+.composer textarea{flex:1;min-height:44px;max-height:120px;resize:none;border-radius:14px;padding:11px 12px;font:inherit;font-size:16px;background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.composer .ic{width:44px;height:44px;flex-shrink:0;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:flex;align-items:center;justify-content:center}
+.composer .send{background:var(--lime);color:var(--bg);border:0}
+.composer .files{max-width:560px;margin:0 auto;width:100%;display:flex;gap:6px;flex-wrap:wrap;font-size:12px}

@@ -20,6 +20,9 @@ const ICON = {
   cal: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
   gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   logo: '<svg width="34" height="34" viewBox="0 0 100 100" role="img" aria-label="SAFA FARRAJ"><rect width="100" height="100" rx="28" fill="#C8F03C"/><text x="35" y="80" text-anchor="middle" direction="ltr" font-family="Karantina, Rubik, sans-serif" font-weight="700" font-size="84" fill="#0C1712">S</text><path d="M58 20v62M58 22h28M58 50h18" stroke="#0C1712" stroke-width="8" stroke-linecap="round" fill="none"/><circle cx="80" cy="76" r="12.5" fill="#F2F5EE" stroke="#0C1712" stroke-width="3.5"/><path d="M80 71L84.76 74.45L82.94 80.05L77.06 80.05L75.24 74.45Z" fill="#0C1712"/><path d="M80 71V65M84.76 74.45L90.5 72.6M82.94 80.05L86.5 85M77.06 80.05L73.5 85M75.24 74.45L69.5 72.6" stroke="#0C1712" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  bot: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg>',
+  clip: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
+  send: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="transform:scaleX(-1)"><path d="M3 20.5 21 12 3 3.5l2.5 7L15 12l-9.5 1.5z"/></svg>',
   play: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
 };
 
@@ -124,6 +127,7 @@ function shell(title, body, { back = false, tab = 'home' } = {}) {
   <nav class="bottom">
     <button class="${tab === 'home' ? 'on' : ''}" data-go="#/">${ICON.home}<span>בית</span></button>
     <button class="${tab === 'schedule' ? 'on' : ''}" data-go="#/schedule">${ICON.cal}<span>לוח משחקים</span></button>
+    <button class="${tab === 'bot' ? 'on' : ''}" data-go="#/bot">${ICON.bot}<span>עוזר</span></button>
     <button class="${tab === 'settings' ? 'on' : ''}" data-go="#/settings">${ICON.gear}<span>הגדרות</span></button>
   </nav>`;
 }
@@ -539,11 +543,12 @@ actions.openFile = async (el) => {
   if (error) return toast('לא ניתן לפתוח את הקובץ'); window.open(data.signedUrl, '_blank');
 };
 actions.editContract = async (el) => {
-  let c = {};
+  let c = el.prefill ? { ...el.prefill, id: undefined } : {};
   if (el.dataset.id) c = (await sb.from('contracts').select('*').eq('id', el.dataset.id).single()).data || {};
   const club = el.dataset.t === 'club';
   const f = (name, label, type = 'text') => `<label class="lbl">${label}<input class="field" type="${type}" name="${name}" value="${esc(c[name] ?? '')}"></label>`;
   const m = modal(`<div class="num" style="font-size:30px">${club ? 'חוזה עם המועדון' : 'חוזה עם הסוכן'}</div>
+    ${el.prefill ? `<div class="card" style="padding:10px 12px;font-size:13px">הנתונים חולצו מהחוזה על ידי העוזר. בדוק, תקן אם צריך, ואשר. שדה ריק יוצג כ"-".${c.file_path ? ' הקובץ כבר מצורף.' : ''}</div>` : ''}
     <label class="lbl">קובץ החוזה (PDF / תמונה)<input class="field" type="file" name="file" accept=".pdf,image/*" style="padding-top:10px"></label>
     ${f('start_date', 'מועד תחילה', 'date')}${f('end_date', 'מועד סיום', 'date')}
     ${club ? f('minutes_commitment_pct', 'התחייבות לדקות משחק (%)', 'number') + f('discounts', 'הנחות') + f('travel_allowance', 'דמי נסיעות') + f('salary', 'שכר') + f('release_clause', 'סעיף שחרור') + f('extension_option', 'אופציה להארכה') : f('agent_fee', 'עמלת סוכן')}
@@ -559,6 +564,7 @@ actions.editContract = async (el) => {
       if (up.error) { ev.target.disabled = false; return toast('שגיאה בהעלאת הקובץ'); }
       vals.file_path = path;
     }
+    if (!vals.file_path && c.file_path) vals.file_path = c.file_path;
     const r = c.id ? await sb.from('contracts').update(vals).eq('id', c.id) : await sb.from('contracts').insert(vals);
     if (r.error) { ev.target.disabled = false; return toast('שגיאה בשמירה'); }
     m.remove(); toast('החוזה נשמר'); render();
@@ -664,6 +670,71 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
     <div class="muted" style="font-size:12px">משחקים עתידיים נוספים מופיעים בפרופיל של כל שחקן</div>
   </div>`, { tab: 'schedule' });
 });
+
+// ---------------------------------------------------------------- in-app assistant (bot)
+const CHAT_KEY = 'sf-chat-v1';
+function chatLoad() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch { return []; } }
+function chatSave() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch { /* storage unavailable */ } }
+S.chat = chatLoad(); S.chatFiles = [];
+const BOT_HINTS = ['תוסיף שחקן במעקב: <קישור מאתר ההתאחדות>', 'לסלים יש בישול במשחק נגד בית"ר חיפה', 'עמדה של אליא: קשר, רגל ימין', 'המשחק האחרון של אליא לא נספר – היה בנבחרת'];
+
+route(/^\/bot$/, () => {
+  const bubbles = S.chat.map((m) => `<div class="bubble ${m.role === 'user' ? 'me' : 'bot'}">${esc(m.text)}${m.atts?.length ? `<div class="att">📎 ${m.atts.map(esc).join(', ')}</div>` : ''}${m.contract ? `<div style="margin-top:8px"><button class="btn" style="height:38px;font-size:13px" data-act="botContract" data-i="${S.chat.indexOf(m)}">פתיחת טופס החוזה לאישור</button></div>` : ''}</div>`).join('');
+  shell('עוזר', `<div class="chat" id="chat">
+    ${S.chat.length ? '' : `<div class="card" style="padding:14px;font-size:14px;line-height:1.6">כתוב לי מה לעדכן, ואני אעשה את זה. אפשר גם לצרף סרטון, תמונה או חוזה (📎).<div class="muted" style="font-size:12px;margin-top:8px">דוגמאות:</div>${BOT_HINTS.map((h) => `<button class="chip" style="margin:4px 0 0 4px" data-act="botHint">${esc(h)}</button>`).join('')}</div>`}
+    ${bubbles}
+    ${S.chatBusy ? '<div class="bubble bot muted">חושב…</div>' : ''}
+    ${S.chat.length ? '<button class="btn2" style="align-self:center;height:34px;font-size:12px;padding:0 14px" data-act="botClear">שיחה חדשה</button>' : ''}
+  </div>
+  <div class="composer">
+    ${S.chatFiles.length ? `<div class="files">${S.chatFiles.map((f, i) => `<span class="chip on" data-act="botRm" data-i="${i}">📎 ${esc(f.name)} ✕</span>`).join('')}</div>` : ''}
+    <div class="rowc">
+      <label class="ic" aria-label="צירוף קובץ">${ICON.clip}<input type="file" id="botfile" multiple accept="image/*,video/*,.pdf" style="display:none"></label>
+      <textarea id="botin" rows="1" placeholder="מה לעדכן?">${esc(S.chatDraft || '')}</textarea>
+      <button class="ic send" data-act="botSend" aria-label="שליחה" ${S.chatBusy ? 'disabled' : ''}>${ICON.send}</button>
+    </div>
+  </div>`, { tab: 'bot' });
+  const ta = document.getElementById('botin');
+  ta.oninput = () => { S.chatDraft = ta.value; ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; };
+  document.getElementById('botfile').onchange = (e) => { S.chatFiles.push(...e.target.files); render(); };
+  window.scrollTo(0, document.body.scrollHeight);
+});
+actions.botHint = (el) => { S.chatDraft = el.textContent.replace(/<.*?>/, ''); render(); setTimeout(() => document.getElementById('botin')?.focus(), 50); };
+actions.botRm = (el) => { S.chatFiles.splice(+el.dataset.i, 1); render(); };
+actions.botClear = () => { S.chat = []; chatSave(); render(); };
+actions.botContract = (el) => {
+  const m = S.chat[+el.dataset.i]; const f = m.contract;
+  const { player_id, contract_type, ...rest } = f;
+  actions.editContract({ dataset: { p: String(player_id), t: contract_type }, prefill: rest });
+};
+actions.botSend = async () => {
+  const text = (S.chatDraft || '').trim(); const files = S.chatFiles.slice();
+  if (!text && !files.length) return;
+  S.chatBusy = true; S.chatDraft = ''; S.chatFiles = [];
+  S.chat.push({ role: 'user', text: text || '(קובץ מצורף)', atts: files.map((f) => f.name) }); chatSave(); render();
+  try {
+    const atts = [];
+    for (const f of files) {
+      const bucket = f.type === 'application/pdf' ? 'contracts' : 'media';
+      const path = `inbox/${Date.now()}-${f.name.replace(/[^\w.]+/g, '_')}`;
+      const up = await sb.storage.from(bucket).upload(path, f, { contentType: f.type });
+      if (up.error) throw new Error('upload');
+      atts.push({ path, bucket, name: f.name, type: f.type || 'application/octet-stream' });
+    }
+    const history = S.chat.slice(0, -1).slice(-12).map((m) => ({ role: m.role, text: m.text }));
+    const { data, error } = await sb.functions.invoke('bot', { body: { history, text, attachments: atts } });
+    if (error) throw error;
+    const contract = (data.actions || []).find((a) => a.type === 'contract');
+    S.chat.push({ role: 'assistant', text: data.reply || 'בוצע.', contract: contract ? contract.fields : undefined });
+    if (data.changed) await loadCore();
+  } catch (e) {
+    console.error(e);
+    S.chat.push({ role: 'assistant', text: e.message === 'upload' ? 'לא הצלחתי להעלות את הקובץ (גדול מדי?). נסה קובץ קטן יותר.' : 'משהו השתבש בחיבור. נסה שוב.' });
+  }
+  S.chatBusy = false; chatSave();
+  if ((location.hash || '').startsWith('#/bot')) render();
+  const last = S.chat[S.chat.length - 1]; if (last.contract) actions.botContract({ dataset: { i: String(S.chat.length - 1) } });
+};
 
 // ---------------------------------------------------------------- alerts
 function alertCard(n) {

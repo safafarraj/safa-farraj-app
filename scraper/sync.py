@@ -63,6 +63,8 @@ class Sync:
                     self.notify("team_change", f"🔁 החלפת קבוצה · {upd['name']}",
                                 f"רשום עכשיו ב{prof.team_name} ({prof.league_name}). קודם: {p['team_name']}",
                                 f"team:{p['id']}:{prof.team_name}", p, f"/player/{p['id']}")
+                if prof.team_name != p.get("team_name") or not p.get("ifa_team_id"):
+                    upd.update(self.resolve_team(p, prof))
                 upd["team_name"], upd["league_name"] = prof.team_name, prof.league_name
             self.db.update("players", f"id=eq.{p['id']}", upd)
             p.update(upd)
@@ -79,6 +81,41 @@ class Sync:
                              "team_name": old.team_name, "league_name": old.league_name, "goals": old.goals_total})
             self.db.upsert("player_seasons", rows, "player_id,season_id", returning=False)
         log(f"profiles synced: {len(self.players)}")
+
+    def resolve_team(self, p: dict, prof: ifa.PlayerProfile) -> dict:
+        """Find the IFA team_id / league_id of the player's current team (new player or team change)."""
+        from .backfill import Backfill
+        team_id = None
+        for r in ifa.parse_player_games(self.client.player_games(p["ifa_player_id"], SEASON_ID))[-4:][::-1]:
+            g = ifa.parse_game_page(self.client.game_page(r.game_id, SEASON_ID), r.game_id)
+            for gp in g.players:
+                if gp.ifa_player_id == p["ifa_player_id"]:
+                    team_id = g.home_team_id if gp.side == "home" else g.away_team_id
+            if not team_id and prof.team_name:
+                team_id = g.home_team_id if prof.team_name in (g.home_team or "") else g.away_team_id if prof.team_name in (g.away_team or "") else None
+            if team_id:
+                break
+        if not team_id:
+            log("team not resolved yet (no games this season)")
+            return {}
+        out = {"ifa_team_id": team_id}
+        league_id = Backfill.league_id(SEASON_ID, self.client.team_page(team_id, SEASON_ID))
+        if league_id:
+            out["ifa_league_id"] = league_id
+            if league_id not in self.leagues:
+                length = ifa.parse_game_length(self.client.league_page(league_id, SEASON_ID))
+                row = {"ifa_league_id": league_id, "season_id": SEASON_ID, "name": prof.league_name,
+                       "game_length_min": length, "updated_at": datetime.utcnow().isoformat()}
+                self.db.upsert("leagues", row, "ifa_league_id,season_id", returning=False)
+                self.leagues[league_id] = row
+        self.db.upsert("teams", {"ifa_team_id": team_id, "season_id": SEASON_ID, "name": prof.team_name,
+                                 "ifa_league_id": league_id}, "ifa_team_id,season_id", returning=False)
+        lg = prof.league_name or ""
+        for key in ("נערים א", "נערים ב", "נערים ג", "ילדים א", "ילדים ב", "ילדים ג", "נוער", "בוגרים"):
+            if key in lg:
+                out["age_group"] = key + ("'" if key[-1] in "אבג" else "")
+                break
+        return out
 
     # ------------------------------------------------------------------
     def sync_team(self, team_id: int, league_id: Optional[int]) -> list[ifa.ScheduleRow]:
@@ -288,6 +325,9 @@ class Sync:
         # once a day (from 05:00) do a full refresh of profiles, history and cup games
         if not self.full and (not self.initialized or (self.now.hour >= 5 and self._older_than("last_full", timedelta(hours=20)))):
             self.full = True
+        new_players = [p for p in self.players if not p.get("current_season_id")]
+        if new_players:
+            self.full = True  # a player was just added (e.g. from the in-app bot)
         if self.full:
             self.sync_profiles()
         game_day = bool(self.db.select("games", f"game_date=eq.{self.today}&select=id&limit=1"))
@@ -299,6 +339,13 @@ class Sync:
         self.sync_games()
         if self.full:
             self.db.set_state("last_full", self.now.isoformat())
+        if new_players:
+            from .backfill import Backfill
+            bf = Backfill(force=False)
+            bf.client = self.client
+            ids = {p["id"] for p in new_players}
+            bf.players = [p for p in bf.players if p["id"] in ids]
+            bf.run()
         if not self.initialized:
             self.db.set_state("initialized", True)
             log("first run: back-fill done, alerts enabled from now on")
