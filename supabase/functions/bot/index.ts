@@ -21,7 +21,7 @@ const TOOLS = [
   { name: "add_player", description: "הוספת שחקן חדש לפי קישור לפרופיל באתר ההתאחדות או player_id. השרת ימשוך את כל הנתונים שלו (כולל עונות קודמות) תוך כ-10–20 דקות.",
     input_schema: { type: "object", properties: { ifa: { type: "string", description: "קישור או מספר player_id" }, kind: { type: "string", enum: ["mine", "tracked"] } }, required: ["ifa", "kind"] } },
   { name: "update_player", description: "עדכון פרטים ידניים של שחקן. תאריכים בפורמט YYYY-MM-DD. kind מעביר בין 'שחקנים שלי' ל'במעקב'. לשלוח רק שדות שצריך לשנות.",
-    input_schema: { type: "object", properties: { player_id: { type: "integer" }, position: { type: "string" }, strong_foot: { type: "string", enum: ["ימין", "שמאל", "שתיהן"] }, birth_date: { type: "string" }, coach_birth_date: { type: "string" }, kind: { type: "string", enum: ["mine", "tracked"] } }, required: ["player_id"] } },
+    input_schema: { type: "object", properties: { player_id: { type: "integer" }, position: { type: "string" }, strong_foot: { type: "string", enum: ["ימין", "שמאל", "שתיהן"] }, birth_date: { type: "string" }, coach_birth_date: { type: "string" }, kind: { type: "string", enum: ["mine", "tracked"] }, transfer_status: { type: "string", enum: ["loan", "permanent"], description: "מושאל / העברה קבועה" }, loan_from: { type: "string", description: "הקבוצה שממנה מושאל" }, loan_until: { type: "string", description: "סיום ההשאלה YYYY-MM-DD" } }, required: ["player_id"] } },
   { name: "remove_player", description: "הסרת שחקן מהאפליקציה (מפסיק מעקב, הנתונים נשמרים). רק אחרי שהסוכן אישר במפורש בשיחה.",
     input_schema: { type: "object", properties: { player_id: { type: "integer" }, confirmed_by_user: { type: "boolean" } }, required: ["player_id", "confirmed_by_user"] } },
   { name: "find_games", description: "משחקי הקבוצה של השחקן בעונה (ברירת מחדל: הנוכחית, 28). אפשר לסנן לפי יריב (חלק מהשם) או תאריך YYYY-MM-DD. מחזיר game_id, תאריך, קבוצות, תוצאה, ומה השחקן עשה (סטטוס, דקות, שערים, בישולים, לא נספר).",
@@ -114,13 +114,13 @@ Deno.serve(async (req) => {
   const run = async (name: string, i: any): Promise<unknown> => {
     switch (name) {
       case "list_players": {
-        const { data } = await sb.from("players").select("id,name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,coach_name,coach_birth_date,shirt_number,ifa_player_id").eq("active", true).order("id");
+        const { data } = await sb.from("players").select("id,name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,coach_name,coach_birth_date,shirt_number,transfer_status,loan_from,loan_until,ifa_player_id").eq("active", true).order("id");
         return data;
       }
       case "player_details": {
         const id = i.player_id;
         const [p, seasons, contacts, notes, media, contracts] = await Promise.all([
-          sb.from("players").select("name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,citizenship,coach_name,coach_birth_date,shirt_number").eq("id", id).maybeSingle(),
+          sb.from("players").select("name,kind,team_name,league_name,age_group,position,strong_foot,birth_date,birth_month_year,citizenship,coach_name,coach_birth_date,shirt_number,transfer_status,loan_from,loan_until").eq("id", id).maybeSingle(),
           sb.from("player_seasons").select("season_label,team_name,league_name,goals,yellow_cards,red_cards").eq("player_id", id).order("season_id", { ascending: false }),
           sb.from("contacts").select("role,name,phone").eq("player_id", id),
           sb.from("notes").select("note_date,from_who,to_who,body").eq("player_id", id).order("note_date", { ascending: false }).limit(20),
