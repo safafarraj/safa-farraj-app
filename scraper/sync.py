@@ -23,6 +23,14 @@ def log(msg: str) -> None:
     print(f"[{ifa.now_il():%H:%M:%S}] {msg}", flush=True)
 
 
+def age_group(league: str):
+    lg = (league or "").replace("ילד.טר.", "ילדים טרום ").replace("ילד.", "ילדים ").replace("נער.", "נערים ")
+    for key in ("נערים א", "נערים ב", "נערים ג", "ילדים טרום א", "ילדים א", "ילדים ב", "ילדים ג", "נוער", "בוגרים"):
+        if key in lg:
+            return key + ("'" if key[-1] in "אבג" else "")
+    return None
+
+
 class Sync:
     def __init__(self, full: bool):
         self.full = full
@@ -111,10 +119,7 @@ class Sync:
         self.db.upsert("teams", {"ifa_team_id": team_id, "season_id": SEASON_ID, "name": prof.team_name,
                                  "ifa_league_id": league_id}, "ifa_team_id,season_id", returning=False)
         lg = prof.league_name or ""
-        for key in ("נערים א", "נערים ב", "נערים ג", "ילדים א", "ילדים ב", "ילדים ג", "נוער", "בוגרים"):
-            if key in lg:
-                out["age_group"] = key + ("'" if key[-1] in "אבג" else "")
-                break
+        out["age_group"] = age_group(lg)
         return out
 
     # ------------------------------------------------------------------

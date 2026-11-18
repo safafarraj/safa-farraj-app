@@ -114,6 +114,10 @@ def _qs(href: str, key: str) -> Optional[int]:
 def split_team_league(title: str) -> tuple[str, str]:
     """'בני סכנין (נערים ב' לאומית צפון)' -> ('בני סכנין', "נערים ב' לאומית צפון")."""
     title = title.strip()
+    # a player registered in two teams: "A (league 1), A (league 2)" -> the last one (his own age group)
+    parts = re.split(r"\)\s*,\s*", title)
+    if len(parts) > 1:
+        title = parts[-1].strip()
     m = re.match(r"^(.*)\((.*)\)\s*$", title)
     if m:
         return m.group(1).strip(), m.group(2).strip()
