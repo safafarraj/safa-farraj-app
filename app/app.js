@@ -663,7 +663,7 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
     <div class="seg"><button class="${aud === 'mine' ? 'on' : ''}" data-go="#/schedule?aud=mine">שחקנים שלי</button><button class="${aud === 'tracked' ? 'on' : ''}" data-go="#/schedule?aud=tracked">שחקנים במעקב</button></div>
     <div class="card" style="padding:12px 14px;font-size:14px">${weekend.length ? (() => { const f = weekend[0].g.game_date, l = weekend[weekend.length - 1].g.game_date; return `מחזור סוף השבוע · ${f === l ? `יום ${dayName(f)} ${fmtDate(f)}` : `מיום ${dayName(f)} ${fmtDate(f)} עד יום ${dayName(l)} ${fmtDate(l)}`}: <b style="color:var(--lime)">${weekend.length} משחקים</b>`; })() : `מחזור סוף השבוע: <b style="color:var(--lime)">אין משחקים</b>`}</div>
     ${weekend.length ? `<div class="card" style="overflow:hidden">${weekend.map(row).join('')}</div>` : ''}
-    ${noGame.length && ps.length ? `<div class="muted" style="font-size:12px">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
+    ${noGame.length && ps.length ? `<div style="font-size:13px;font-weight:700;color:#F5C542;background:rgba(245,197,66,.10);border:1px solid rgba(245,197,66,.35);border-radius:14px;padding:10px 12px;line-height:1.5">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
     <div class="muted" style="font-size:12px">משחקים עתידיים נוספים מופיעים בפרופיל של כל שחקן</div>
   </div>`, { tab: 'schedule' });
 });
