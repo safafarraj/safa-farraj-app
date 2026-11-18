@@ -31,13 +31,23 @@ const ICON = {
 // ---------------------------------------------------------------- state
 const S = { players: [], leagues: {}, games: [], gp: [], seasons: [], unread: 0, ui: {} };
 
+// the server returns at most 1000 rows per request – read big tables page by page
+async function fetchAll(make) {
+  const out = []; const size = 1000;
+  for (let from = 0; ; from += size) {
+    const r = await make().range(from, from + size - 1);
+    if (r.error) return r;
+    out.push(...r.data);
+    if (r.data.length < size) return { data: out, error: null };
+  }
+}
 async function loadCore() {
   const [p, l, g, gp, ps, n] = await Promise.all([
     sb.from('players').select('*').eq('active', true).order('id'),
-    sb.from('leagues').select('*'),
-    sb.from('games').select('*').order('game_date').order('kickoff_time', { nullsFirst: true }),
-    sb.from('game_players').select('*'),
-    sb.from('player_seasons').select('*').order('season_id', { ascending: false }),
+    fetchAll(() => sb.from('leagues').select('*').order('id')),
+    fetchAll(() => sb.from('games').select('*').order('game_date').order('kickoff_time', { nullsFirst: true }).order('id')),
+    fetchAll(() => sb.from('game_players').select('*').order('id')),
+    fetchAll(() => sb.from('player_seasons').select('*').order('season_id', { ascending: false }).order('id')),
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
@@ -220,7 +230,7 @@ route(/^\/tracked$/, () => {
     ${tr.length ? `<div class="grid2">${tr.map((p) => `<div class="card" style="padding:10px;display:flex;flex-direction:column;gap:8px">
       <button data-act="quick" data-id="${p.id}" style="border:0;padding:0;background:none"><img class="photo" src="${esc(p.photo_url || '')}" alt="פרטים מהירים" style="width:100%;height:130px;border-radius:14px"></button>
       <div style="font-weight:800">${esc(p.name)}</div><div class="muted" style="font-size:12px">${esc(p.team_name || '')} · ${esc(p.league_name || '')}</div>
-      <button class="btn2" data-go="#/player/${p.id}/games" style="height:38px;font-size:13px">לוח משחקים</button></div>`).join('')}</div>`
+      <button class="btn2" data-go="#/player/${p.id}/info" style="height:38px;font-size:13px">פרטי השחקן</button></div>`).join('')}</div>`
     : '<div class="card muted" style="padding:14px;font-size:14px">אין עדיין שחקנים במעקב. שלח ל-Claude קישור לפרופיל של שחקן באתר ההתאחדות, והוא יוסיף אותו.</div>'}
   </div>`, { back: '#/' });
 });
