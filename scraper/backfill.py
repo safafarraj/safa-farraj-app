@@ -47,6 +47,13 @@ class Backfill:
                     self.season(p, sid, label)
                 except Exception as e:  # keep going with the other seasons
                     log(f"season {sid} failed: {type(e).__name__}: {str(e)[:200]}")
+            # current season: a newly added player has no line-up rows yet for games synced before he was added
+            gp_cur = self.db.select("game_players", f"player_id=eq.{p['id']}&select=games!inner(season_id)&games.season_id=eq.{SEASON_ID}&limit=1")
+            if not gp_cur:
+                try:
+                    self.season(p, SEASON_ID, dict(prof.seasons).get(SEASON_ID, ""))
+                except Exception as e:
+                    log(f"current season failed: {type(e).__name__}: {str(e)[:200]}")
         log(f"done · requests={self.client.requests_made} · {self.client.bytes_received/1e6:.1f}MB")
 
     @staticmethod
