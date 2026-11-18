@@ -23,6 +23,9 @@ class DB:
             raise RuntimeError(f"DB {r.request.method} {r.url.split('?')[0]} -> {r.status_code}: {r.text[:300]}")
         return r
 
+    def rpc(self, fn: str, args: dict | None = None):
+        return self._check(self.s.post(f"{self.base}/rpc/{fn}", json=args or {}))
+
     def select(self, table: str, query: str = "select=*") -> list[dict]:
         return self._check(self.s.get(f"{self.base}/{table}?{query}")).json()
 

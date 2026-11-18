@@ -354,6 +354,10 @@ class Sync:
             Alerts(self.db, self.now, self.notify).run()
         from .alerts import send_pushes
         pushed = send_pushes(self.db)
+        try:
+            self.db.rpc("refresh_shirt_numbers", {"p_season": SEASON_ID})  # shirt number = the one he wears in games
+        except Exception as e:
+            log(f"shirt refresh failed: {e}")
         self.db.set_state("last_sync", {"at": datetime.utcnow().isoformat(), "full": self.full,
                                         "requests": self.client.requests_made,
                                         "kb": round(self.client.bytes_received / 1024)})
