@@ -116,6 +116,8 @@ class Backfill:
             g = self.game(gid, sid)
             if not g.game_date:
                 continue
+            if team_id and team_id not in (g.home_team_id, g.away_team_id):
+                continue  # a game he played for another team this season (before a transfer / loan)
             played_out = g.game_date < self.today
             final = g.home_score is not None or (played_out and g.has_lineups)
             has_moves = any(k in ("sub_in", "sub_out") for x in g.players for k, _ in x.events)
