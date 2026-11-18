@@ -16,8 +16,9 @@ from .sync import SEASON_ID, log
 
 
 class Backfill:
-    def __init__(self, force: bool):
+    def __init__(self, force: bool, current_ids=()):
         self.force = force
+        self.current_ids = set(current_ids)
         self.client = ifa.IFAClient()
         self.db = DB()
         self.today = ifa.now_il().date()
@@ -49,9 +50,9 @@ class Backfill:
                     log(f"season {sid} failed: {type(e).__name__}: {str(e)[:200]}")
             # current season: a newly added player has no line-up rows yet for games synced before he was added
             gp_cur = self.db.select("game_players", f"player_id=eq.{p['id']}&select=games!inner(season_id)&games.season_id=eq.{SEASON_ID}&limit=1")
-            if not gp_cur:
+            if not gp_cur or p["id"] in self.current_ids:
                 try:
-                    self.season(p, SEASON_ID, dict(prof.seasons).get(SEASON_ID, ""))
+                    self.season(p, SEASON_ID, dict(prof.seasons).get(SEASON_ID, ""), force_team=p.get("ifa_team_id"))
                 except Exception as e:
                     log(f"current season failed: {type(e).__name__}: {str(e)[:200]}")
         log(f"done · requests={self.client.requests_made} · {self.client.bytes_received/1e6:.1f}MB")
@@ -65,7 +66,7 @@ class Backfill:
                 return int(m.group(1))
         return None
 
-    def season(self, p: dict, sid: int, label: str) -> None:
+    def season(self, p: dict, sid: int, label: str, force_team=None) -> None:
         self._player_html = self.client.player_page(p["ifa_player_id"], sid)
         prof = ifa.parse_player_page(self._player_html)
         rows = ifa.parse_player_games(self.client.player_games(p["ifa_player_id"], sid))
@@ -83,7 +84,7 @@ class Backfill:
                     team_votes[g.home_team_id] += 1
                 elif prof.team_name in (g.away_team or ""):
                     team_votes[g.away_team_id] += 1
-        team_id = team_votes.most_common(1)[0][0] if team_votes else None
+        team_id = force_team or (team_votes.most_common(1)[0][0] if team_votes else None)
 
         league_id = length = None
         standings: list = []
@@ -168,4 +169,6 @@ class Backfill:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true")
-    Backfill(ap.parse_args().force).run()
+    ap.add_argument("--current", default="", help="player ids (comma) whose current season to refill")
+    a = ap.parse_args()
+    Backfill(a.force, [int(x) for x in a.current.split(",") if x]).run()

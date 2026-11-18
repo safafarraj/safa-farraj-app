@@ -7,6 +7,10 @@ on:
         description: "Re-read seasons that were already back-filled"
         type: boolean
         default: false
+      current:
+        description: "Player ids (comma) to refill current season"
+        type: string
+        default: ""
 
 concurrency:
   group: ifa-sync
@@ -31,4 +35,4 @@ jobs:
         env:
           IL_PROXY: ${{ secrets.IL_PROXY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python -m scraper.backfill ${{ inputs.force && '--force' || '' }}
+        run: python -m scraper.backfill ${{ inputs.force && '--force' || '' }} ${{ inputs.current && format('--current {0}', inputs.current) || '' }}
