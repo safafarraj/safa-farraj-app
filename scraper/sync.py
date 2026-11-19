@@ -297,11 +297,11 @@ class Sync:
                     {"result": res, "ours": ours, "theirs": theirs})
 
     def check_coach(self, team_id: int, coach: str, g: ifa.GameDetails, status: str) -> None:
-        if not coach or status == "scheduled":
+        if not coach or status == "scheduled" or "*" in coach:  # the site hides some names as *****
             return
         t = self.teams.get(team_id)
         if not t:
-            return
+            t = self.teams[team_id] = {"ifa_team_id": team_id, "name": "", "coach_name": None}
         last_date = t.get("_coach_date")
         if last_date and g.game_date <= last_date:
             return
