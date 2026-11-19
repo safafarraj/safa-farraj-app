@@ -112,6 +112,7 @@ class Backfill:
             wanted.setdefault(gid, "cup" if r.is_cup else "league")
 
         n_games = n_lineups = 0
+        coach_seen = None
         for gid, comp in wanted.items():
             g = self.game(gid, sid)
             if not g.game_date:
@@ -132,6 +133,10 @@ class Backfill:
                 "home_coach": g.home_coach or None, "away_coach": g.away_coach or None,
                 "updated_at": datetime.utcnow().isoformat()}, "ifa_game_id")
             n_games += 1
+            if team_id and final:  # latest coach of his team (current season -> player's coach)
+                c = g.home_coach if g.home_team_id == team_id else g.away_coach
+                if c and "*" not in c and (coach_seen is None or g.game_date >= coach_seen[0]):
+                    coach_seen = (g.game_date, c)
             if not g.has_lineups:
                 continue
             n_lineups += 1
@@ -158,6 +163,9 @@ class Backfill:
                                                    "event_type": k} for k, m in events],
                                   "game_id,player_id,event_type,minute")
 
+        if sid == SEASON_ID and coach_seen and not p.get("coach_name"):
+            self.db.update("players", f"id=eq.{p['id']}", {"coach_name": coach_seen[1]})
+            log(f"player {p['id']}: coach set")
         self.db.upsert("player_seasons", {
             "player_id": p["id"], "season_id": sid, "season_label": label, "team_name": prof.team_name,
             "league_name": prof.league_name, "goals": prof.goals_total, "yellow_cards": prof.yellow_cards,
