@@ -298,7 +298,7 @@ async function tabInfo(p) {
     <div class="card" style="padding:14px">${seasonSelect(p)}</div>
     <div class="card">
       <div class="row"><span class="muted">שנת לידה</span><b>${esc(p.birth_month_year || '')}</b></div>
-      <div class="row"><span class="muted">תאריך לידה מלא</span>${manual(p.birth_date && p.birth_date.split('-').reverse().join('/'))}</div>
+      ${p.kind === 'tracked' ? '' : `<div class="row"><span class="muted">תאריך לידה מלא</span>${manual(p.birth_date && p.birth_date.split('-').reverse().join('/'))}</div>`}
       <div class="row"><span class="muted">קבוצה</span><b>${esc(team || '')}</b></div>
       <div class="row"><span class="muted">ליגה</span><b>${esc(league || '')}</b></div>
       <div class="row"><span class="muted">מאמן</span><b>${esc(coach || '-')}</b></div>
@@ -323,7 +323,7 @@ actions.editInfo = (el) => {
   const m = modal(`<div class="num" style="font-size:30px">פרטים ידניים</div>
     <label class="lbl">עמדה<input class="field" name="position" value="${esc(p.position || '')}" placeholder="למשל: בלם"></label>
     <label class="lbl">רגל חזקה<select class="field" name="strong_foot"><option value=""></option>${['ימין', 'שמאל', 'שתיהן'].map((f) => `<option ${p.strong_foot === f ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
-    <label class="lbl">תאריך לידה מלא<input class="field" type="date" name="birth_date" value="${esc(p.birth_date || '')}"></label>
+    ${p.kind === 'tracked' ? '' : `<label class="lbl">תאריך לידה מלא<input class="field" type="date" name="birth_date" value="${esc(p.birth_date || '')}"></label>`}
     <label class="lbl">יום הולדת של המאמן<input class="field" type="date" name="coach_birth_date" value="${esc(p.coach_birth_date || '')}"></label>
     <label class="lbl">סטטוס בקבוצה<select class="field" name="transfer_status"><option value="permanent" ${p.transfer_status !== 'loan' ? 'selected' : ''}>העברה קבועה</option><option value="loan" ${p.transfer_status === 'loan' ? 'selected' : ''}>מושאל</option></select></label>
     <label class="lbl">מושאל מקבוצה (אם מושאל)<input class="field" name="loan_from" value="${esc(p.loan_from || '')}" placeholder="למשל: מכבי חיפה"></label>
