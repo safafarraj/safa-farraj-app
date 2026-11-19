@@ -305,7 +305,7 @@ async function tabInfo(p) {
       <div class="row"><span class="muted">עמדה</span>${manual(p.position)}</div>
       <div class="row"><span class="muted">רגל חזקה</span>${manual(p.strong_foot)}</div>
       <div class="row"><span class="muted">מספר חולצה</span><b>${esc(shirt || '-')}</b></div>
-      ${cx.current ? `<div class="row"><span class="muted">סטטוס בקבוצה</span><b>${p.transfer_status === 'loan' ? `מושאל${p.loan_from ? ` מ${esc(p.loan_from)}` : ''}${p.loan_until ? ` · עד ${fmtDateFull(p.loan_until)}` : ''}` : p.transfer_status === 'permanent' ? 'העברה קבועה' : '-'}</b></div>` : ''}
+      ${cx.current ? `<div class="row"><span class="muted">סטטוס בקבוצה</span><b>${p.transfer_status === 'loan' ? `מושאל${p.loan_from ? ` מ${esc(p.loan_from)}` : ''}${p.loan_until ? ` · עד ${fmtDateFull(p.loan_until)}` : ''}` : 'העברה קבועה'}</b></div>` : ''}
       <div class="row"><span class="muted">אזרחות</span><b>${esc(p.citizenship || '')}</b></div>
     </div>
     <button class="btn2" data-act="editInfo" data-id="${p.id}">עריכת פרטים ידניים</button>
@@ -325,7 +325,7 @@ actions.editInfo = (el) => {
     <label class="lbl">רגל חזקה<select class="field" name="strong_foot"><option value=""></option>${['ימין', 'שמאל', 'שתיהן'].map((f) => `<option ${p.strong_foot === f ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
     <label class="lbl">תאריך לידה מלא<input class="field" type="date" name="birth_date" value="${esc(p.birth_date || '')}"></label>
     <label class="lbl">יום הולדת של המאמן<input class="field" type="date" name="coach_birth_date" value="${esc(p.coach_birth_date || '')}"></label>
-    <label class="lbl">סטטוס בקבוצה<select class="field" name="transfer_status"><option value="">-</option><option value="permanent" ${p.transfer_status === 'permanent' ? 'selected' : ''}>העברה קבועה</option><option value="loan" ${p.transfer_status === 'loan' ? 'selected' : ''}>מושאל</option></select></label>
+    <label class="lbl">סטטוס בקבוצה<select class="field" name="transfer_status"><option value="permanent" ${p.transfer_status !== 'loan' ? 'selected' : ''}>העברה קבועה</option><option value="loan" ${p.transfer_status === 'loan' ? 'selected' : ''}>מושאל</option></select></label>
     <label class="lbl">מושאל מקבוצה (אם מושאל)<input class="field" name="loan_from" value="${esc(p.loan_from || '')}" placeholder="למשל: מכבי חיפה"></label>
     <label class="lbl">השאלה עד (אם ידוע)<input class="field" type="date" name="loan_until" value="${esc(p.loan_until || '')}"></label>
     <button class="btn" data-save>שמירה</button><button class="btn2" data-close>ביטול</button>`);
