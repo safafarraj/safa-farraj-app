@@ -74,9 +74,15 @@ function seasonCtx(p, sid = p.current_season_id) {
   return { sid, team: row.ifa_team_id, league: row.ifa_league_id, L: row.game_length_min || (lg || {}).game_length_min || 80, current: false, row, lg };
 }
 const gameLength = (p, sid) => seasonCtx(p, sid).L;
+const sameGame = (a, b) => a.game_date === b.game_date && a.home_team === b.home_team && a.away_team === b.away_team;
 const teamGames = (p, sid) => {
   const c = seasonCtx(p, sid);
-  return S.games.filter((g) => g.season_id === c.sid && (g.ifa_team_id === c.team || (!c.current && g.ifa_team_id == null && S.gp.some((x) => x.game_id === g.id && x.player_id === p.id))));
+  const own = S.games.filter((g) => g.season_id === c.sid && (g.ifa_team_id === c.team || (!c.current && g.ifa_team_id == null && S.gp.some((x) => x.game_id === g.id && x.player_id === p.id))));
+  // a game stored under the other team (when two of our teams play each other)
+  const nm = c.team != null && ourName({ season_id: c.sid, ifa_team_id: c.team });
+  if (!nm) return own;
+  const extra = S.games.filter((g) => g.season_id === c.sid && g.ifa_team_id !== c.team && (g.home_team === nm || g.away_team === nm) && !own.some((o) => sameGame(o, g)));
+  return extra.length ? own.concat(extra).sort((a, b) => (a.game_date + (a.kickoff_time || '')).localeCompare(b.game_date + (b.kickoff_time || ''))) : own;
 };
 // our team's name as written in a team's fixtures = the name that appears in all of its games
 const _ourName = {};
@@ -91,7 +97,8 @@ function ourName(g) {
 }
 
 function perspective(p, g) {
-  const on = g.ifa_team_id != null && ourName(g);
+  const tid = g.season_id === p.current_season_id && p.ifa_team_id ? p.ifa_team_id : g.ifa_team_id;
+  const on = tid != null && ourName({ season_id: g.season_id, ifa_team_id: tid });
   const home = on ? g.home_team === on : (g.home_team === p.team_name || (g.home_team && p.team_name && g.home_team.startsWith(p.team_name)));
   const ours = home ? g.home_score : g.away_score, theirs = home ? g.away_score : g.home_score;
   const res = ours == null ? null : ours > theirs ? 'W' : ours < theirs ? 'L' : 'D';
@@ -789,15 +796,23 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   for (const p of ps) for (const g of teamGames(p)) if (g.game_date >= iso(fri) && g.game_date <= iso(sun)) weekend.push({ p, g });
   weekend.sort((a, b) => (a.g.game_date + (a.g.kickoff_time || '')).localeCompare(b.g.game_date + (b.g.kickoff_time || '')));
   const noGame = ps.filter((p) => !weekend.some((x) => x.p.id === p.id));
-  const row = ({ p, g }) => { const v = perspective(p, g); const fin = g.status === 'final' && g.home_score != null; return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
+  // one line per game, even when several of our players play in it (also on opposite sides)
+  const byGame = [];
+  for (const x of weekend) { const e = byGame.find((y) => y.g.id === x.g.id || sameGame(y.g, x.g)); if (e) e.ps.push(x.p); else byGame.push({ g: x.g, ps: [x.p] }); }
+  const row = ({ g, ps: gps }) => { const p = gps[0]; const v = perspective(p, g); const fin = g.status === 'final' && g.home_score != null;
+    const sides = [...new Set(gps.map((x) => perspective(x, g).home))];
+    const title = sides.length > 1 ? `${esc(g.home_team)} – ${esc(g.away_team)}` : `נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'})`;
+    const who = sides.length > 1 ? [true, false].map((h) => gps.filter((x) => perspective(x, g).home === h).map((x) => esc(x.name)).join(', ') + ` (${h ? 'בית' : 'חוץ'})`).join(' · ') : gps.map((x) => esc(x.name)).join(', ');
+    return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
       ${dateCol(g)}
-      <div style="flex:1;min-width:0"><div class="ell" style="font-size:13px;font-weight:800">${esc(p.name)} · נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'})</div>
+      <div style="flex:1;min-width:0"><div class="ell" style="font-size:13px;font-weight:800">${title}</div>
+      <div class="ell" style="font-size:12px;color:var(--lime);white-space:normal;line-height:1.35">${who}</div>
       <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div>
       ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : `<span class="addbtn ${S.myGames.has(g.id) ? 'on' : ''}" data-act="myToggle" data-g="${g.id}" role="button" aria-label="הוספה ללוח המשחקים שלי">${S.myGames.has(g.id) ? '✓' : '+'}</span>`}</button>`; };
   shell('לוח משחקים', `<div class="stack">
     ${scheduleSeg(aud)}
-    <div class="card" style="padding:12px 14px;font-size:14px">${weekend.length ? (() => { const f = weekend[0].g.game_date, l = weekend[weekend.length - 1].g.game_date; return `מחזור סוף השבוע · ${f === l ? `יום ${dayName(f)} ${fmtDate(f)}` : `מיום ${dayName(f)} ${fmtDate(f)} עד יום ${dayName(l)} ${fmtDate(l)}`}: <b style="color:var(--lime)">${weekend.length} משחקים</b>`; })() : `מחזור סוף השבוע: <b style="color:var(--lime)">אין משחקים</b>`}</div>
-    ${weekend.length ? `<div class="card" style="overflow:hidden">${weekend.map(row).join('')}</div>` : ''}
+    <div class="card" style="padding:12px 14px;font-size:14px">${weekend.length ? (() => { const f = weekend[0].g.game_date, l = weekend[weekend.length - 1].g.game_date; return `מחזור סוף השבוע · ${f === l ? `יום ${dayName(f)} ${fmtDate(f)}` : `מיום ${dayName(f)} ${fmtDate(f)} עד יום ${dayName(l)} ${fmtDate(l)}`}: <b style="color:var(--lime)">${byGame.length} משחקים</b>`; })() : `מחזור סוף השבוע: <b style="color:var(--lime)">אין משחקים</b>`}</div>
+    ${byGame.length ? `<div class="card" style="overflow:hidden">${byGame.map(row).join('')}</div>` : ''}
     ${noGame.length && ps.length ? `<div style="font-size:13px;font-weight:700;color:#F5C542;background:rgba(245,197,66,.10);border:1px solid rgba(245,197,66,.35);border-radius:14px;padding:10px 12px;line-height:1.5">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
     <div class="muted" style="font-size:12px">משחקים עתידיים נוספים מופיעים בפרופיל של כל שחקן</div>
   </div>`, { tab: 'schedule' });

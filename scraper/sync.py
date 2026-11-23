@@ -222,15 +222,19 @@ class Sync:
         saved = self.db.upsert("games", row, "ifa_game_id")
         game_row_id = saved[0]["id"]
 
-        if our_side:
-            self.check_coach(team_id, g.home_coach if our_side == "home" else g.away_coach, g, status)
+        # both teams may be ours (two of our players playing each other)
+        our_teams = {p.get("ifa_team_id") for p in self.players}
+        for tid, coach in ((g.home_team_id, g.home_coach), (g.away_team_id, g.away_coach)):
+            if tid in our_teams:
+                self.check_coach(tid, coach, g, status)
 
         if not g.has_lineups:
             return
         by_ifa = {gp.ifa_player_id: gp for gp in g.players}
         for p in self.players:
-            if p.get("ifa_team_id") != team_id:
+            if p.get("ifa_team_id") not in (g.home_team_id, g.away_team_id):
                 continue
+            p_team = p["ifa_team_id"]
             gp = by_ifa.get(p["ifa_player_id"])
             length = self.game_length(p.get("ifa_league_id"))
             if gp is None:
@@ -255,14 +259,14 @@ class Sync:
             ev_rows = [{"game_id": game_row_id, "player_id": p["id"], "minute": m, "event_type": k}
                        for k, m in events]
             inserted = self.db.insert_ignore("game_events", ev_rows, "game_id,player_id,event_type,minute")
-            opp = g.away_team if g.home_team_id == team_id else g.home_team
+            opp = g.away_team if g.home_team_id == p_team else g.home_team
             if fresh:
                 for e in inserted:
                     self.event_notification(p, e, opp, gid)
                 if status != "final":
                     self.lineup_notification(p, status_p, opp, g, gid)
             if complete and fresh:
-                self.report_notification(p, g, team_id, status_p, mins, goals, gprow, gid)
+                self.report_notification(p, g, p_team, status_p, mins, goals, gprow, gid)
 
     # ------------------------------------------------------------------
     EVENT_TITLES = {"goal": "⚽ שער!", "penalty_goal": "⚽ שער מפנדל!", "own_goal": "שער עצמי",
