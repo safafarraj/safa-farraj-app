@@ -74,7 +74,7 @@ function seasonCtx(p, sid = p.current_season_id) {
   return { sid, team: row.ifa_team_id, league: row.ifa_league_id, L: row.game_length_min || (lg || {}).game_length_min || 80, current: false, row, lg };
 }
 const gameLength = (p, sid) => seasonCtx(p, sid).L;
-const sameGame = (a, b) => a.game_date === b.game_date && (!a.kickoff_time || !b.kickoff_time || a.kickoff_time === b.kickoff_time) && (a.home_team || '').trim() === (b.home_team || '').trim() && (a.away_team || '').trim() === (b.away_team || '').trim();
+const sameGame = (a, b) => a.game_date === b.game_date && (!a.kickoff_time || !b.kickoff_time || a.kickoff_time === b.kickoff_time) && (!a.venue || !b.venue || a.venue.trim() === b.venue.trim()) && (a.home_team || '').trim() === (b.home_team || '').trim() && (a.away_team || '').trim() === (b.away_team || '').trim();
 const teamLeague = (sid, tid) => {
   const p = S.players.find((x) => x.current_season_id === sid && x.ifa_team_id === tid);
   if (p) return p.ifa_league_id;
