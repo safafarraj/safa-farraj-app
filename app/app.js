@@ -23,10 +23,42 @@ function clubGroups(list) {
   return [...m.entries()].sort((a, b) => (a[0] || 'תתת').localeCompare(b[0] || 'תתת', 'he'))
     .map(([k, cs]) => [k, cs.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'))]);
 }
+// same normalisation as the club-crest server function
+const CLUB_ABBR = { 'ק"ש': 'קרית שמונה', 'ב"ש': 'באר שבע', 'ת"א': 'תל אביב', 'פ"ת': 'פתח תקווה', 'ר"ג': 'רמת גן', 'ראשל"צ': 'ראשון לציון', 'ק"ג': 'קרית גת', 'ק"א': 'קרית אתא', 'ק"ב': 'קרית ביאליק', 'ק"מ': 'קרית מוצקין', 'ק"י': 'קרית ים', 'נ"צ': 'נס ציונה', 'מ"א': 'מעלה אדומים', 'כ"ס': 'כפר סבא', 'ה"ש': 'הוד השרון', 'ר"ה': 'רמת השרון' };
+function clubKey(s) {
+  s = (s || '').replace(/[״“”]/g, '"').replace(/[׳’]/g, "'").replace(/\s+/g, ' ').trim();
+  s = s.replace(/"?צו פיוס"?/g, ' ');
+  for (const [k, v] of Object.entries(CLUB_ABBR)) s = s.replace(new RegExp(`(^|\\s)${k}(?=\\s|$)`, 'g'), `$1${v}`);
+  s = s.replace(/(^|\s)הפ'\s*/g, '$1הפועל ').replace(/(^|\s)מכ'\s*/g, '$1מכבי ');
+  s = s.replace(/(^|\s)(מ\.ס\.|מ\.כ\.|מ\.כדורגל|מועדון ספורט|מועדון כדורגל|F\.?C\.?)(?=\s|$)/g, ' ');
+  return s.replace(/קריית/g, 'קרית').replace(/\s+/g, ' ').trim().replace(/["'.\-–]/g, '').replace(/\s+/g, ' ').trim();
+}
+const hasStaticCrest = (club) => CLUB_CRESTS.some(([re]) => re.test(club || ''));
+// look a club's crest up on the internet (once per club); returns true when something new was found
+async function ensureCrest(club) {
+  if (!club || hasStaticCrest(club)) return false;
+  const k = clubKey(club);
+  if (!S.clubCrests || k in S.clubCrests) return false;
+  try {
+    const { data } = await sb.functions.invoke('club-crest', { body: { club } });
+    if (data && data.key) { S.clubCrests[data.key] = data.image_url || null; return !!data.image_url; }
+  } catch (e) { /* offline: try again next time */ }
+  return false;
+}
+// clubs already in the lists without a looked-up crest (runs quietly after loading)
+async function ensureAllCrests() {
+  if (S._crestRun) return; S._crestRun = true;
+  let any = false;
+  for (const c of new Set([...(S.contacts || []).map((x) => x.club), ...(S.openings || []).map((x) => x.club)])) if (await ensureCrest(c)) any = true;
+  S._crestRun = false;
+  if (any) render();
+}
 function clubCrest(club, size = 36) {
   const hit = CLUB_CRESTS.find(([re]) => re.test(club || ''));
   const box = `width:${size}px;height:${size}px;flex:none;border-radius:50%`;
   if (hit) return `<img class="crest" src="${crestUrl(hit[1])}" alt="" style="${box};padding:3px">`;
+  const web = (S.clubCrests || {})[clubKey(club)];
+  if (web) return `<img class="crest" src="${esc(web)}" alt="" referrerpolicy="no-referrer" style="${box};padding:3px">`;
   return `<span style="${box};display:grid;place-items:center;background:var(--line);color:var(--ink);font-weight:800;font-size:${Math.round(size * .42)}px">${esc((club || '?').replace(/^(מ\.ס\.|מ\.כ\.|הפועל|מכבי|בני|בית"ר|בית״ר|עירוני)\s*/, '').trim().charAt(0) || '?')}</span>`;
 }
 
@@ -60,7 +92,7 @@ async function fetchAll(make) {
   }
 }
 async function loadCore() {
-  const [p, l, g, gp, ps, nc, op, mg, n] = await Promise.all([
+  const [p, l, g, gp, ps, nc, op, mg, cc, n] = await Promise.all([
     sb.from('players').select('*').eq('active', true).order('id'),
     fetchAll(() => sb.from('leagues').select('*').order('id')),
     fetchAll(() => sb.from('games').select('*').order('game_date').order('kickoff_time', { nullsFirst: true }).order('id')),
@@ -69,10 +101,11 @@ async function loadCore() {
     sb.from('network_contacts').select('*').order('club').order('name'),
     sb.from('openings').select('*').order('created_at', { ascending: false }),
     sb.from('my_games').select('*'),
+    sb.from('club_crests').select('key,image_url'),
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
-  S.contacts = nc.data || []; S.openings = op.data || []; S.myGames = new Set((mg.data || []).map((x) => x.game_id));
+  S.contacts = nc.data || []; S.openings = op.data || []; S.clubCrests = Object.fromEntries((cc.data || []).map((x) => [x.key, x.image_url])); S.myGames = new Set((mg.data || []).map((x) => x.game_id));
   S.players = p.data; S.games = g.data; S.gp = gp.data; S.seasons = ps.data;
   S.leaguesAll = l.data;
   S.leagues = Object.fromEntries(l.data.filter((x) => x.season_id === 28).map((x) => [x.ifa_league_id, x]));
@@ -762,6 +795,7 @@ route(/^\/contacts$/, () => {
     </div>`).join('')}</div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
     <div class="muted" style="font-size:12px">📞 חיוג או וואטסאפ · לחיצה על השורה: עריכה</div>
   </div>`, { tab: 'contacts' });
+  ensureAllCrests();
   const inp = document.getElementById('cq');
   inp.oninput = () => { S.ui.cq = inp.value; clearTimeout(S._cqT); S._cqT = setTimeout(() => { render(); const i = document.getElementById('cq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
 });
@@ -813,6 +847,7 @@ actions.editContact = (el) => {
     const r = c.id ? await sb.from('network_contacts').update(v).eq('id', c.id) : await sb.from('network_contacts').insert(v);
     if (r.error) { alert('שמירה נכשלה'); return; }
     m.remove(); await loadCore(); render();
+    if (await ensureCrest(v.club)) render();
   };
   const d = m.querySelector('[data-del]');
   if (d) d.onclick = async () => { if (!confirm('למחוק את איש הקשר?')) return; await sb.from('network_contacts').delete().eq('id', c.id); m.remove(); await loadCore(); render(); };
@@ -852,6 +887,7 @@ actions.editOpening = (el) => {
     const r = o.id ? await sb.from('openings').update(v).eq('id', o.id) : await sb.from('openings').insert(v);
     if (r.error) { alert('שמירה נכשלה'); return; }
     m.remove(); await loadCore(); render();
+    if (await ensureCrest(v.club)) render();
   };
   const d = m.querySelector('[data-del]');
   if (d) d.onclick = async () => { if (!confirm('למחוק את הדרוש?')) return; await sb.from('openings').delete().eq('id', o.id); m.remove(); await loadCore(); render(); };
