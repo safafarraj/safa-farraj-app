@@ -730,10 +730,20 @@ actions.myToggle = async (el) => {
 
 // ---------------------------------------------------------------- contacts & openings
 const waNum = (ph) => { let d = String(ph || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '972' + d.slice(1); return d; };
+// Israeli number as written locally: +972 52 123 4567 -> 052-1234567
+function localPhone(ph) {
+  let d = String(ph || '').replace(/[^\d+]/g, '');
+  if (!d) return ph || '';
+  if (d.startsWith('+972')) d = '0' + d.slice(4); else if (d.startsWith('00972')) d = '0' + d.slice(5); else if (d.startsWith('972') && d.length >= 11) d = '0' + d.slice(3);
+  d = d.replace(/^0+(?=0)/, '');
+  if (/^05\d{8}$/.test(d) || /^07\d{8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3);
+  if (/^0[2-489]\d{7}$/.test(d)) return d.slice(0, 2) + '-' + d.slice(2);
+  return d;
+}
 const telNum = (ph) => String(ph || '').replace(/[^\d+]/g, '');
 function phoneModal(name, phone, sub) {
   modal(`<div style="text-align:center"><div style="font-size:18px;font-weight:800">${esc(name || '')}</div>${sub ? `<div class="muted" style="font-size:13px">${esc(sub)}</div>` : ''}
-    <div class="num" dir="ltr" style="font-size:34px;margin:12px 0;color:var(--lime)">${esc(phone || '-')}</div></div>
+    <div class="num" dir="ltr" style="font-size:34px;margin:12px 0;color:var(--lime)">${esc(phone ? localPhone(phone) : '-')}</div></div>
     ${phone ? `<div class="callbtns"><a href="tel:${telNum(phone)}" style="background:var(--lime);color:var(--bg)">📞 חיוג</a><a href="https://wa.me/${waNum(phone)}" target="_blank" rel="noopener" style="background:#25D366;color:#fff">💬 וואטסאפ</a></div>` : '<div class="muted" style="text-align:center">לא הוזן מספר</div>'}
     <button class="btn2" data-close style="margin-top:6px">סגירה</button>`);
 }
@@ -771,7 +781,7 @@ actions.editContact = (el) => {
     ${c.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
   const fill = (name, phone, org, title) => {
     const set = (k, v) => { const i = m.querySelector(`[name=${k}]`); if (v && !i.value) i.value = v; };
-    set('name', name); set('phone', phone); set('club', org); set('role', title);
+    set('name', name); set('phone', phone ? localPhone(phone) : phone); set('club', org); set('role', title);
   };
   const pick = m.querySelector('[data-pick]');
   if (pick) pick.onclick = async () => {
@@ -796,6 +806,7 @@ actions.editContact = (el) => {
   m.querySelector('[data-save]').onclick = async () => {
     const v = Object.fromEntries([...m.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim() || null]));
     if (!v.name) { alert('צריך שם'); return; }
+    if (v.phone) v.phone = localPhone(v.phone);
     // empty = automatic: the server checks the IFA leagues for this club + age group within ~10 minutes
     if (v.league_level) { v.league_auto = false; v.league_name = null; }
     else { v.league_auto = true; delete v.league_level; if (c.league_auto === false || v.club !== c.club || v.age_group !== c.age_group) { v.league_key = null; if (c.league_auto === false) v.league_level = null; } }
