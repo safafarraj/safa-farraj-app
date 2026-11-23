@@ -85,3 +85,8 @@ nav.bottom button.on{color:var(--lime)}
 .addbtn.on{background:var(--lime);color:var(--bg)}
 .callbtns{display:flex;gap:10px}
 .callbtns a{flex:1;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;text-decoration:none}
+.cgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,.8fr) 34px;gap:6px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+.cgrid:last-child{border-bottom:0}
+.cgrid button{background:none;border:0;padding:0;color:inherit;text-align:right;font:inherit;font-weight:800}
+.cgrid.cghead{color:var(--muted);font-size:11px;padding-top:6px;padding-bottom:4px}
+.cgrid .cphone{width:34px;height:30px;border-radius:9px;background:var(--lime);text-align:center;font-size:15px}
