@@ -47,8 +47,8 @@ label.lbl{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--
 .top .title{flex:1;font-size:30px;padding:4px 4px 0}
 .badge{position:absolute;top:6px;left:6px;min-width:18px;height:18px;border-radius:9px;background:var(--red);color:var(--bg);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
 main{padding:4px 16px calc(90px + var(--safe-bottom));max-width:560px;margin:0 auto}
-nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--safe-bottom)}
-nav.bottom button{height:64px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px;font-weight:700;color:var(--muted)}
+nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(6,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:var(--safe-bottom)}
+nav.bottom button{height:64px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;white-space:nowrap;font-weight:700;color:var(--muted)}
 nav.bottom button.on{color:var(--lime)}
 .modal-bg{position:fixed;inset:0;z-index:20;background:rgba(4,9,6,.72);display:flex;align-items:flex-end;justify-content:center}
 .modal{background:var(--surface);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;width:100%;max-width:560px;max-height:88vh;overflow-y:auto;padding:18px 18px calc(18px + var(--safe-bottom));display:flex;flex-direction:column;gap:12px}
@@ -74,3 +74,14 @@ nav.bottom button.on{color:var(--lime)}
 /* assistant floating button (like a site chat agent) */
 .fab{position:fixed;left:16px;bottom:calc(80px + var(--safe-bottom));z-index:7;width:58px;height:58px;border-radius:50%;border:0;background:var(--lime);color:var(--bg);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.45),0 0 0 4px rgba(200,240,60,.18)}
 .fab svg{width:28px;height:28px}
+
+/* tables: contacts / openings */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font-size:11px;font-weight:700;color:var(--muted);text-align:right;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:10px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .lnk{color:var(--lime);font-weight:700;background:none;border:0;padding:0;font:inherit;text-align:right}
+.addbtn{width:34px;height:34px;flex-shrink:0;border-radius:50%;border:1px solid var(--lime);background:transparent;color:var(--lime);font-size:20px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center}
+.addbtn.on{background:var(--lime);color:var(--bg)}
+.callbtns{display:flex;gap:10px}
+.callbtns a{flex:1;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;text-decoration:none}

@@ -25,6 +25,8 @@ const ICON = {
   clip: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
   send: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="transform:scaleX(-1)"><path d="M3 20.5 21 12 3 3.5l2.5 7L15 12l-9.5 1.5z"/></svg>',
   doc: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></svg>',
+  people: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>',
+  search: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16v13H4z"/><path d="M9 7V4h6v3"/><path d="M4 12h16"/></svg>',
   play: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
 };
 
@@ -42,15 +44,19 @@ async function fetchAll(make) {
   }
 }
 async function loadCore() {
-  const [p, l, g, gp, ps, n] = await Promise.all([
+  const [p, l, g, gp, ps, nc, op, mg, n] = await Promise.all([
     sb.from('players').select('*').eq('active', true).order('id'),
     fetchAll(() => sb.from('leagues').select('*').order('id')),
     fetchAll(() => sb.from('games').select('*').order('game_date').order('kickoff_time', { nullsFirst: true }).order('id')),
     fetchAll(() => sb.from('game_players').select('*').order('id')),
     fetchAll(() => sb.from('player_seasons').select('*').order('season_id', { ascending: false }).order('id')),
+    sb.from('network_contacts').select('*').order('club').order('name'),
+    sb.from('openings').select('*').order('created_at', { ascending: false }),
+    sb.from('my_games').select('*'),
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
+  S.contacts = nc.data || []; S.openings = op.data || []; S.myGames = new Set((mg.data || []).map((x) => x.game_id));
   S.players = p.data; S.games = g.data; S.gp = gp.data; S.seasons = ps.data;
   S.leaguesAll = l.data;
   S.leagues = Object.fromEntries(l.data.filter((x) => x.season_id === 28).map((x) => [x.ifa_league_id, x]));
@@ -140,6 +146,8 @@ function shell(title, body, { back = false, tab = 'home' } = {}) {
   <nav class="bottom">
     <button class="${tab === 'home' ? 'on' : ''}" data-go="#/">${ICON.home}<span>בית</span></button>
     <button class="${tab === 'schedule' ? 'on' : ''}" data-go="#/schedule">${ICON.cal}<span>לוח משחקים</span></button>
+    <button class="${tab === 'contacts' ? 'on' : ''}" data-go="#/contacts">${ICON.people}<span>אנשי קשר</span></button>
+    <button class="${tab === 'openings' ? 'on' : ''}" data-go="#/openings">${ICON.search}<span>דרושים</span></button>
     <button class="${tab === 'policy' ? 'on' : ''}" data-go="#/policy">${ICON.doc}<span>מדיניות</span></button>
     <button class="${tab === 'settings' ? 'on' : ''}" data-go="#/settings">${ICON.gear}<span>הגדרות</span></button>
   </nav>`;
@@ -651,8 +659,125 @@ actions.addNote = (el) => {
 };
 
 // ---------------------------------------------------------------- schedule
+const scheduleSeg = (aud) => `<div class="seg"><button class="${aud === 'mine' ? 'on' : ''}" data-go="#/schedule?aud=mine">שחקנים שלי</button><button class="${aud === 'tracked' ? 'on' : ''}" data-go="#/schedule?aud=tracked">שחקנים במעקב</button><button class="${aud === 'my' ? 'on' : ''}" data-go="#/schedule?aud=my">הלוח שלי${S.myGames.size ? ` · ${[...S.myGames].filter((id) => { const g = S.games.find((x) => x.id === id); return g && g.game_date >= todayIso(); }).length}` : ''}</button></div>`;
+const dateCol = (g) => `<div style="width:52px;text-align:center;flex-shrink:0"><div class="num" style="font-size:22px;color:var(--lime);line-height:1">${fmtDate(g.game_date)}</div><div class="muted" style="font-size:10px">יום ${dayName(g.game_date)}</div><div style="font-size:13px;font-weight:800;margin-top:2px">${g.kickoff_time && g.kickoff_time.slice(0, 5) !== '00:00' ? g.kickoff_time.slice(0, 5) : '<span class="muted" style="font-size:10px;font-weight:600">שעה טרם נקבעה</span>'}</div></div>`;
+function myScheduleView() {
+  const today = todayIso();
+  const games = S.games.filter((g) => S.myGames.has(g.id) && g.game_date >= today)
+    .sort((a, b) => (a.game_date + (a.kickoff_time || '')).localeCompare(b.game_date + (b.kickoff_time || '')));
+  const rows = games.map((g) => {
+    const ps = S.players.filter((p) => teamGames(p).some((x) => x.id === g.id));
+    const p0 = ps[0]; const v = p0 ? perspective(p0, g) : null;
+    return `<div class="row" style="align-items:center">
+      ${dateCol(g)}
+      <button style="flex:1;min-width:0;background:none;border:0;text-align:right;padding:0;color:inherit" data-act="game" data-p="${p0 ? p0.id : ''}" data-g="${g.id}">
+        <div class="ell" style="font-size:13px;font-weight:800">${esc(g.home_team)} – ${esc(g.away_team)}</div>
+        <div class="muted ell" style="font-size:11px">${esc(g.venue || 'מגרש טרם נקבע')} · ${g.competition === 'cup' ? 'גביע' : 'ליגה'}</div>
+        <div class="ell" style="font-size:11px;color:var(--lime)">${ps.map((p) => esc(p.name) + (p.kind === 'tracked' ? ' (מעקב)' : '')).join(', ')}</div>
+      </button>
+      <span class="addbtn on" data-act="myToggle" data-g="${g.id}" role="button" aria-label="הסרה מהלוח שלי">✕</span>
+    </div>`;
+  }).join('');
+  shell('לוח משחקים', `<div class="stack">
+    ${scheduleSeg('my')}
+    ${rows ? `<div class="card" style="overflow:hidden">${rows}</div>` : '<div class="card muted" style="padding:14px;font-size:14px;line-height:1.6">עדיין לא בחרת משחקים. בלשוניות "שחקנים שלי" ו"שחקנים במעקב" לוחצים על + ליד משחק כדי להוסיף אותו לכאן.</div>'}
+    <div class="muted" style="font-size:12px">משחקים שעברו יורדים מהרשימה אוטומטית</div>
+  </div>`, { tab: 'schedule' });
+}
+actions.myToggle = async (el) => {
+  const id = +el.dataset.g;
+  if (S.myGames.has(id)) { S.myGames.delete(id); await sb.from('my_games').delete().eq('game_id', id); }
+  else { S.myGames.add(id); await sb.from('my_games').insert({ game_id: id }); }
+  render();
+};
+
+// ---------------------------------------------------------------- contacts & openings
+const waNum = (ph) => { let d = String(ph || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '972' + d.slice(1); return d; };
+const telNum = (ph) => String(ph || '').replace(/[^\d+]/g, '');
+function phoneModal(name, phone, sub) {
+  modal(`<div style="text-align:center"><div style="font-size:18px;font-weight:800">${esc(name || '')}</div>${sub ? `<div class="muted" style="font-size:13px">${esc(sub)}</div>` : ''}
+    <div class="num" dir="ltr" style="font-size:34px;margin:12px 0;color:var(--lime)">${esc(phone || '-')}</div></div>
+    ${phone ? `<div class="callbtns"><a href="tel:${telNum(phone)}" style="background:var(--lime);color:var(--bg)">📞 חיוג</a><a href="https://wa.me/${waNum(phone)}" target="_blank" rel="noopener" style="background:#25D366;color:#fff">💬 וואטסאפ</a></div>` : '<div class="muted" style="text-align:center">לא הוזן מספר</div>'}
+    <button class="btn2" data-close style="margin-top:6px">סגירה</button>`);
+}
+actions.phone = (el) => phoneModal(el.dataset.name, el.dataset.phone, el.dataset.sub);
+
+route(/^\/contacts$/, () => {
+  const q = (S.ui.cq || '').trim();
+  const list = S.contacts.filter((c) => !q || [c.club, c.name, c.role, c.age_group, c.phone].some((x) => (x || '').includes(q)));
+  shell('אנשי קשר', `<div class="stack">
+    <div style="display:flex;gap:8px"><input class="field" id="cq" placeholder="חיפוש: מועדון, שם, תפקיד…" value="${esc(q)}" style="flex:1"><button class="btn" style="width:auto;padding:0 16px" data-act="editContact">+ הוספה</button></div>
+    ${list.length ? `<div class="card" style="overflow-x:auto;padding:4px 8px"><table class="tbl"><thead><tr><th>מועדון</th><th>שם</th><th>תפקיד</th><th>מספר</th><th>גיל</th></tr></thead><tbody>
+      ${list.map((c) => `<tr><td><button class="lnk" style="color:inherit;font-weight:600" data-act="editContact" data-id="${c.id}">${esc(c.club || '-')}</button></td><td style="font-weight:700">${esc(c.name)}</td><td>${esc(c.role || '-')}</td>
+        <td>${c.phone ? `<button class="lnk" dir="ltr" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}">${esc(c.phone)}</button>` : '-'}</td><td>${esc(c.age_group || '-')}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
+    <div class="muted" style="font-size:12px">לחיצה על המספר: חיוג או וואטסאפ · לחיצה על המועדון: עריכה</div>
+  </div>`, { tab: 'contacts' });
+  const inp = document.getElementById('cq');
+  inp.oninput = () => { S.ui.cq = inp.value; clearTimeout(S._cqT); S._cqT = setTimeout(() => { render(); const i = document.getElementById('cq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+});
+actions.editContact = (el) => {
+  const c = S.contacts.find((x) => x.id === +el.dataset.id) || {};
+  const m = modal(`<div class="num" style="font-size:28px">${c.id ? 'עריכת איש קשר' : 'איש קשר חדש'}</div>
+    <label class="lbl">מועדון<input class="field" name="club" value="${esc(c.club || '')}"></label>
+    <label class="lbl">שם<input class="field" name="name" value="${esc(c.name || '')}"></label>
+    <label class="lbl">תפקיד<input class="field" name="role" value="${esc(c.role || '')}" placeholder="מאמן, מנהל מקצועי, יו״ר…"></label>
+    <label class="lbl">מספר<input class="field" name="phone" type="tel" dir="ltr" value="${esc(c.phone || '')}"></label>
+    <label class="lbl">גיל (שנתון)<input class="field" name="age_group" value="${esc(c.age_group || '')}" placeholder="נערים ב', נוער, בוגרים…"></label>
+    <button class="btn" data-save>שמירה</button>
+    ${c.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
+  m.querySelector('[data-save]').onclick = async () => {
+    const v = Object.fromEntries([...m.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim() || null]));
+    if (!v.name) { alert('צריך שם'); return; }
+    const r = c.id ? await sb.from('network_contacts').update(v).eq('id', c.id) : await sb.from('network_contacts').insert(v);
+    if (r.error) { alert('שמירה נכשלה'); return; }
+    m.remove(); await loadCore(); render();
+  };
+  const d = m.querySelector('[data-del]');
+  if (d) d.onclick = async () => { if (!confirm('למחוק את איש הקשר?')) return; await sb.from('network_contacts').delete().eq('id', c.id); m.remove(); await loadCore(); render(); };
+};
+
+const OPEN_AGES = ['בוגרים', 'נוער', "נערים א'", "נערים ב'", "נערים ג'", "ילדים א'", "ילדים ב'", "ילדים ג'"];
+const LEVELS = ['על', 'לאומית', 'ארצית', 'אחר'];
+route(/^\/openings$/, () => {
+  const groups = [...new Set([...OPEN_AGES, ...S.openings.map((o) => o.age_group)])].filter((a) => S.openings.some((o) => o.age_group === a));
+  shell('דרושים', `<div class="stack">
+    <button class="btn" data-act="editOpening">+ דרוש חדש</button>
+    ${groups.map((a) => `<p class="sec">${esc(a)}</p><div class="card" style="overflow-x:auto;padding:4px 8px"><table class="tbl"><thead><tr><th>מועדון</th><th>ליגה</th><th>תפקיד</th><th>איש קשר</th></tr></thead><tbody>
+      ${S.openings.filter((o) => o.age_group === a).map((o) => `<tr><td><button class="lnk" style="color:inherit;font-weight:700" data-act="editOpening" data-id="${o.id}">${esc(o.club)}</button></td><td>${esc(o.league_level || '-')}</td><td>${esc(o.role || '-')}</td>
+        <td>${o.contact_name || o.contact_phone ? `<button class="lnk" data-act="phone" data-name="${esc(o.contact_name || '')}" data-phone="${esc(o.contact_phone || '')}" data-sub="${esc(o.club)}">${esc(o.contact_name || o.contact_phone)}</button>` : '-'}</td></tr>`).join('')}
+    </tbody></table></div>`).join('') || '<div class="card muted" style="padding:14px;font-size:14px">עדיין אין דרושים. לוחצים על "+ דרוש חדש".</div>'}
+    <div class="muted" style="font-size:12px">לחיצה על איש הקשר: חיוג או וואטסאפ · לחיצה על המועדון: עריכה</div>
+  </div>`, { tab: 'openings' });
+});
+actions.editOpening = (el) => {
+  const o = S.openings.find((x) => x.id === +el.dataset.id) || {};
+  const opt = (list, cur) => list.map((x) => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  const m = modal(`<div class="num" style="font-size:28px">${o.id ? 'עריכת דרוש' : 'דרוש חדש'}</div>
+    <label class="lbl">שנתון<select class="field" name="age_group">${opt(OPEN_AGES, o.age_group || "נערים ב'")}</select></label>
+    <label class="lbl">מועדון<input class="field" name="club" value="${esc(o.club || '')}"></label>
+    <label class="lbl">ליגה<select class="field" name="league_level">${opt(LEVELS, o.league_level || 'לאומית')}</select></label>
+    <label class="lbl">תפקיד (עמדה דרושה)<input class="field" name="role" value="${esc(o.role || '')}" placeholder="חלוץ, בלם, שוער…"></label>
+    <label class="lbl">איש קשר${S.contacts.length ? `<select class="field" id="opc" style="margin-bottom:6px"><option value="">בחירה מאנשי הקשר…</option>${S.contacts.map((c) => `<option value="${c.id}">${esc(c.name)}${c.club ? ' · ' + esc(c.club) : ''}</option>`).join('')}</select>` : ''}<input class="field" name="contact_name" value="${esc(o.contact_name || '')}" placeholder="שם"></label>
+    <label class="lbl">מספר<input class="field" name="contact_phone" type="tel" dir="ltr" value="${esc(o.contact_phone || '')}"></label>
+    <button class="btn" data-save>שמירה</button>
+    ${o.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
+  const pick = m.querySelector('#opc');
+  if (pick) pick.onchange = () => { const c = S.contacts.find((x) => x.id === +pick.value); if (c) { m.querySelector('[name=contact_name]').value = c.name || ''; m.querySelector('[name=contact_phone]').value = c.phone || ''; if (!m.querySelector('[name=club]').value) m.querySelector('[name=club]').value = c.club || ''; } };
+  m.querySelector('[data-save]').onclick = async () => {
+    const v = Object.fromEntries([...m.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim() || null]));
+    if (!v.club) { alert('צריך מועדון'); return; }
+    const r = o.id ? await sb.from('openings').update(v).eq('id', o.id) : await sb.from('openings').insert(v);
+    if (r.error) { alert('שמירה נכשלה'); return; }
+    m.remove(); await loadCore(); render();
+  };
+  const d = m.querySelector('[data-del]');
+  if (d) d.onclick = async () => { if (!confirm('למחוק את הדרוש?')) return; await sb.from('openings').delete().eq('id', o.id); m.remove(); await loadCore(); render(); };
+};
+
 route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   const aud = m[1] || S.ui.aud || 'mine'; S.ui.aud = aud;
+  if (aud === 'my') return myScheduleView();
   const today = todayIso();
   const ps = S.players.filter((p) => p.kind === aud);
   // the round of the coming weekend: Friday–Sunday (a Sunday game belongs to the same round; midweek games are not shown here)
@@ -665,12 +790,12 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   weekend.sort((a, b) => (a.g.game_date + (a.g.kickoff_time || '')).localeCompare(b.g.game_date + (b.g.kickoff_time || '')));
   const noGame = ps.filter((p) => !weekend.some((x) => x.p.id === p.id));
   const row = ({ p, g }) => { const v = perspective(p, g); const fin = g.status === 'final' && g.home_score != null; return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
-      <div style="width:44px;text-align:center;flex-shrink:0"><div class="num" style="font-size:22px;color:var(--lime)">${fmtDate(g.game_date)}</div><div class="muted" style="font-size:10px">יום ${dayName(g.game_date)}</div></div>
+      ${dateCol(g)}
       <div style="flex:1;min-width:0"><div class="ell" style="font-size:13px;font-weight:800">${esc(p.name)} · נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'})</div>
-      <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${g.kickoff_time ? g.kickoff_time.slice(0, 5) : 'שעה טרם נקבעה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div>
-      ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : ''}</button>`; };
+      <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div>
+      ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : `<span class="addbtn ${S.myGames.has(g.id) ? 'on' : ''}" data-act="myToggle" data-g="${g.id}" role="button" aria-label="הוספה ללוח המשחקים שלי">${S.myGames.has(g.id) ? '✓' : '+'}</span>`}</button>`; };
   shell('לוח משחקים', `<div class="stack">
-    <div class="seg"><button class="${aud === 'mine' ? 'on' : ''}" data-go="#/schedule?aud=mine">שחקנים שלי</button><button class="${aud === 'tracked' ? 'on' : ''}" data-go="#/schedule?aud=tracked">שחקנים במעקב</button></div>
+    ${scheduleSeg(aud)}
     <div class="card" style="padding:12px 14px;font-size:14px">${weekend.length ? (() => { const f = weekend[0].g.game_date, l = weekend[weekend.length - 1].g.game_date; return `מחזור סוף השבוע · ${f === l ? `יום ${dayName(f)} ${fmtDate(f)}` : `מיום ${dayName(f)} ${fmtDate(f)} עד יום ${dayName(l)} ${fmtDate(l)}`}: <b style="color:var(--lime)">${weekend.length} משחקים</b>`; })() : `מחזור סוף השבוע: <b style="color:var(--lime)">אין משחקים</b>`}</div>
     ${weekend.length ? `<div class="card" style="overflow:hidden">${weekend.map(row).join('')}</div>` : ''}
     ${noGame.length && ps.length ? `<div style="font-size:13px;font-weight:700;color:#F5C542;background:rgba(245,197,66,.10);border:1px solid rgba(245,197,66,.35);border-radius:14px;padding:10px 12px;line-height:1.5">אין משחק במחזור הזה: ${noGame.map((p) => esc(p.name)).join(', ')}</div>` : ''}
