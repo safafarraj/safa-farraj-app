@@ -74,14 +74,21 @@ function seasonCtx(p, sid = p.current_season_id) {
   return { sid, team: row.ifa_team_id, league: row.ifa_league_id, L: row.game_length_min || (lg || {}).game_length_min || 80, current: false, row, lg };
 }
 const gameLength = (p, sid) => seasonCtx(p, sid).L;
-const sameGame = (a, b) => a.game_date === b.game_date && (a.home_team || '').trim() === (b.home_team || '').trim() && (a.away_team || '').trim() === (b.away_team || '').trim();
+const sameGame = (a, b) => a.game_date === b.game_date && (!a.kickoff_time || !b.kickoff_time || a.kickoff_time === b.kickoff_time) && (a.home_team || '').trim() === (b.home_team || '').trim() && (a.away_team || '').trim() === (b.away_team || '').trim();
+const teamLeague = (sid, tid) => {
+  const p = S.players.find((x) => x.current_season_id === sid && x.ifa_team_id === tid);
+  if (p) return p.ifa_league_id;
+  const r = S.seasons.find((x) => x.season_id === sid && x.ifa_team_id === tid);
+  return r ? r.ifa_league_id : null;
+};
 const teamGames = (p, sid) => {
   const c = seasonCtx(p, sid);
   const own = S.games.filter((g) => g.season_id === c.sid && (g.ifa_team_id === c.team || (!c.current && g.ifa_team_id == null && S.gp.some((x) => x.game_id === g.id && x.player_id === p.id))));
   // a game stored under the other team (when two of our teams play each other)
   const nm = c.team != null && ourName({ season_id: c.sid, ifa_team_id: c.team });
   if (!nm) return own;
-  const extra = S.games.filter((g) => g.season_id === c.sid && g.ifa_team_id !== c.team && (g.home_team === nm || g.away_team === nm) && !own.some((o) => sameGame(o, g)));
+  // only from a team in the same league (same age group) - clubs use one name for all their age groups
+  const extra = S.games.filter((g) => g.season_id === c.sid && g.ifa_team_id !== c.team && (g.home_team === nm || g.away_team === nm) && c.league != null && teamLeague(c.sid, g.ifa_team_id) === c.league && !own.some((o) => sameGame(o, g)));
   return extra.length ? own.concat(extra).sort((a, b) => (a.game_date + (a.kickoff_time || '')).localeCompare(b.game_date + (b.kickoff_time || ''))) : own;
 };
 // our team's name as written in a team's fixtures = the name that appears in all of its games
