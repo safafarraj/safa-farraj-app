@@ -740,6 +740,8 @@ route(/^\/contacts$/, () => {
 actions.editContact = (el) => {
   const c = S.contacts.find((x) => x.id === +el.dataset.id) || {};
   const m = modal(`<div class="num" style="font-size:28px">${c.id ? 'עריכת איש קשר' : 'איש קשר חדש'}</div>
+    ${c.id ? '' : `<button class="btn2" data-pick>📱 בחירה מאנשי הקשר בטלפון</button>
+    <label class="btn2" style="display:block;text-align:center;cursor:pointer">📇 ייבוא מכרטיס איש קשר (vcf)<input type="file" accept=".vcf,text/vcard,text/x-vcard" data-vcf hidden></label>`}
     <label class="lbl">מועדון<input class="field" name="club" value="${esc(c.club || '')}"></label>
     <label class="lbl">שם<input class="field" name="name" value="${esc(c.name || '')}"></label>
     <label class="lbl">תפקיד<input class="field" name="role" value="${esc(c.role || '')}" placeholder="מאמן, מנהל מקצועי, יו״ר…"></label>
@@ -747,6 +749,30 @@ actions.editContact = (el) => {
     <label class="lbl">גיל (שנתון)<input class="field" name="age_group" value="${esc(c.age_group || '')}" placeholder="נערים ב', נוער, בוגרים…"></label>
     <button class="btn" data-save>שמירה</button>
     ${c.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
+  const fill = (name, phone, org, title) => {
+    const set = (k, v) => { const i = m.querySelector(`[name=${k}]`); if (v && !i.value) i.value = v; };
+    set('name', name); set('phone', phone); set('club', org); set('role', title);
+  };
+  const pick = m.querySelector('[data-pick]');
+  if (pick) pick.onclick = async () => {
+    if (!('contacts' in navigator && navigator.contacts.select)) {
+      alert('הטלפון עוד לא מאפשר לאפליקציה לגשת לאנשי הקשר.\n\nבאייפון: הגדרות ← אפליקציות ← Safari ← מתקדם ← Feature Flags ← להפעיל את "Contact Picker API", ואז לסגור ולפתוח את האפליקציה.\n\nאפשרות נוספת: בכרטיס איש הקשר בטלפון ← "שיתוף איש קשר" ← "שמירה בקבצים", ואז "ייבוא מכרטיס איש קשר".');
+      return;
+    }
+    try {
+      const [ct] = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+      if (ct) fill((ct.name || [])[0], (ct.tel || [])[0]);
+    } catch (e) { /* cancelled */ }
+  };
+  const vcf = m.querySelector('[data-vcf]');
+  if (vcf) vcf.onchange = async () => {
+    const f = vcf.files[0]; if (!f) return;
+    const t = (await f.text()).replace(/\r?\n[ \t]/g, '');
+    const get = (k) => { const x = t.match(new RegExp('^(?:item\\d+\\.)?' + k + '(?:;[^:\\n]*)?:(.*)$', 'mi')); return x ? x[1].trim() : ''; };
+    let name = get('FN');
+    if (!name) { const n = get('N').split(';'); name = [n[1], n[0]].filter(Boolean).join(' '); }
+    fill(name.replace(/\\,/g, ','), get('TEL'), get('ORG').split(';')[0], get('TITLE'));
+  };
   m.querySelector('[data-save]').onclick = async () => {
     const v = Object.fromEntries([...m.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim() || null]));
     if (!v.name) { alert('צריך שם'); return; }
