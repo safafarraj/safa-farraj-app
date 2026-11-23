@@ -795,9 +795,9 @@ route(/^\/contacts$/, () => {
       ${clubCrest(c.club, 30)}
       <button style="flex:1;min-width:0;background:none;border:0;text-align:right;padding:0;color:inherit;font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" data-act="editContact" data-id="${c.id}"><b style="font-size:14px">${esc(c.name)}</b>${[c.role, c.club, c.age_group, c.league_level ? (['על', 'לאומית', 'ארצית'].includes(c.league_level) ? 'ליגת ' : '') + c.league_level : ''].filter(Boolean).map((x) => ` <span class="muted">·</span> ${esc(x)}`).join('')}
       </button>
-      ${c.phone ? `<button class="addbtn" style="flex:none" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}" aria-label="חיוג">📞</button>` : ''}
+      ${c.phone ? `<a class="addbtn" style="flex:none;display:grid;place-items:center;text-decoration:none;background:#25D366;color:#fff" href="https://wa.me/${waNum(c.phone)}" target="_blank" rel="noopener" aria-label="וואטסאפ">💬</a><button class="addbtn" style="flex:none" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}" aria-label="חיוג">📞</button>` : ''}
     </div>`).join('')}</div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
-    <div class="muted" style="font-size:12px">📞 חיוג או וואטסאפ · לחיצה על השורה: עריכה</div>
+    <div class="muted" style="font-size:12px">📞 חיוג · 💬 וואטסאפ · לחיצה על השורה: עריכה</div>
   </div>`, { tab: 'contacts' });
   ensureAllCrests();
   const inp = document.getElementById('cq');
