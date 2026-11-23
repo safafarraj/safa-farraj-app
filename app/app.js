@@ -74,7 +74,7 @@ function seasonCtx(p, sid = p.current_season_id) {
   return { sid, team: row.ifa_team_id, league: row.ifa_league_id, L: row.game_length_min || (lg || {}).game_length_min || 80, current: false, row, lg };
 }
 const gameLength = (p, sid) => seasonCtx(p, sid).L;
-const sameGame = (a, b) => a.game_date === b.game_date && a.home_team === b.home_team && a.away_team === b.away_team;
+const sameGame = (a, b) => a.game_date === b.game_date && (a.home_team || '').trim() === (b.home_team || '').trim() && (a.away_team || '').trim() === (b.away_team || '').trim();
 const teamGames = (p, sid) => {
   const c = seasonCtx(p, sid);
   const own = S.games.filter((g) => g.season_id === c.sid && (g.ifa_team_id === c.team || (!c.current && g.ifa_team_id == null && S.gp.some((x) => x.game_id === g.id && x.player_id === p.id))));
@@ -800,13 +800,11 @@ route(/^\/schedule(?:\?aud=(\w+))?$/, (m) => {
   const byGame = [];
   for (const x of weekend) { const e = byGame.find((y) => y.g.id === x.g.id || sameGame(y.g, x.g)); if (e) e.ps.push(x.p); else byGame.push({ g: x.g, ps: [x.p] }); }
   const row = ({ g, ps: gps }) => { const p = gps[0]; const v = perspective(p, g); const fin = g.status === 'final' && g.home_score != null;
-    const sides = [...new Set(gps.map((x) => perspective(x, g).home))];
-    const title = sides.length > 1 ? `${esc(g.home_team)} – ${esc(g.away_team)}` : `נגד ${esc(v.opp)} (${v.home ? 'בית' : 'חוץ'})`;
-    const who = sides.length > 1 ? [true, false].map((h) => gps.filter((x) => perspective(x, g).home === h).map((x) => esc(x.name)).join(', ') + ` (${h ? 'בית' : 'חוץ'})`).join(' · ') : gps.map((x) => esc(x.name)).join(', ');
+    const names = gps.map((x) => esc(x.name)).join(', ');
     return `<button class="row" data-act="game" data-p="${p.id}" data-g="${g.id}" style="width:100%;text-align:right;background:none;border-left:0;border-right:0;border-top:0">
       ${dateCol(g)}
-      <div style="flex:1;min-width:0"><div class="ell" style="font-size:13px;font-weight:800">${title}</div>
-      <div class="ell" style="font-size:12px;color:var(--lime);white-space:normal;line-height:1.35">${who}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;line-height:1.35">${names}</div>
+      <div class="ell" style="font-size:12px;margin-top:2px">${esc(g.home_team)} – ${esc(g.away_team)}</div>
       <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div></div>
       ${fin ? `<span class="pill ${v.res}" style="flex-shrink:0">${v.ours}:${v.theirs}</span>` : `<span class="addbtn ${S.myGames.has(g.id) ? 'on' : ''}" data-act="myToggle" data-g="${g.id}" role="button" aria-label="הוספה ללוח המשחקים שלי">${S.myGames.has(g.id) ? '✓' : '+'}</span>`}</button>`; };
   shell('לוח משחקים', `<div class="stack">
