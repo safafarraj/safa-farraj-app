@@ -14,7 +14,7 @@ const dayName = (iso) => DAYS[new Date(iso + 'T12:00:00').getDay()];
 const todayIso = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' })).toISOString().slice(0, 10);
 const crestUrl = (teamId) => `/crests/${teamId}.png`;
 // crest by club name (free text) - only clubs we already hold a crest for
-const CLUB_CRESTS = [[/סכנין/, 4117], [/הפועל\s*חיפה/, 2169], [/שפרעם/, 3580], [/(קרי?ית|ק["״]|ק'')\s*ש(מונה)?/, 'kiryat-shmona']];
+const CLUB_CRESTS = [[/סכנין/, 4117], [/הפועל\s*חיפה/, 2169], [/שפרעם/, 3580], [/(קרי?ית|ק["״]|ק'')\s*ש(מונה)?/, 'kiryat-shmona'], [/הפ(ועל|')\s*עכו|^\s*עכו/, 'hapoel-akko']];
 // contacts grouped by club (same club = one after the other), clubs by name
 function clubGroups(list) {
   const key = (c) => (c || '').replace(/\s+/g, ' ').trim();
