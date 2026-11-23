@@ -13,6 +13,14 @@ const fmtDateFull = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split(
 const dayName = (iso) => DAYS[new Date(iso + 'T12:00:00').getDay()];
 const todayIso = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' })).toISOString().slice(0, 10);
 const crestUrl = (teamId) => `/crests/${teamId}.png`;
+// crest by club name (free text) - only clubs we already hold a crest for
+const CLUB_CRESTS = [[/סכנין/, 4117], [/הפועל\s*חיפה/, 2169], [/שפרעם/, 3580]];
+function clubCrest(club, size = 36) {
+  const hit = CLUB_CRESTS.find(([re]) => re.test(club || ''));
+  const box = `width:${size}px;height:${size}px;flex:none;border-radius:50%`;
+  if (hit) return `<img class="crest" src="${crestUrl(hit[1])}" alt="" style="${box};padding:3px">`;
+  return `<span style="${box};display:grid;place-items:center;background:var(--line);color:var(--ink);font-weight:800;font-size:${Math.round(size * .42)}px">${esc((club || '?').replace(/^(מ\.ס\.|מ\.כ\.|הפועל|מכבי|בני|בית"ר|בית״ר|עירוני)\s*/, '').trim().charAt(0) || '?')}</span>`;
+}
 
 const ICON = {
   back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
@@ -725,14 +733,19 @@ actions.phone = (el) => phoneModal(el.dataset.name, el.dataset.phone, el.dataset
 
 route(/^\/contacts$/, () => {
   const q = (S.ui.cq || '').trim();
-  const list = S.contacts.filter((c) => !q || [c.club, c.name, c.role, c.age_group, c.phone].some((x) => (x || '').includes(q)));
+  const list = S.contacts.filter((c) => !q || [c.club, c.name, c.role, c.age_group, c.league_level, c.phone].some((x) => (x || '').includes(q)));
   shell('אנשי קשר', `<div class="stack">
     <div style="display:flex;gap:8px"><input class="field" id="cq" placeholder="חיפוש: מועדון, שם, תפקיד…" value="${esc(q)}" style="flex:1"><button class="btn" style="width:auto;padding:0 16px" data-act="editContact">+ הוספה</button></div>
-    ${list.length ? `<div class="card" style="overflow-x:auto;padding:4px 8px"><table class="tbl"><thead><tr><th>מועדון</th><th>שם</th><th>תפקיד</th><th>מספר</th><th>גיל</th></tr></thead><tbody>
-      ${list.map((c) => `<tr><td><button class="lnk" style="color:inherit;font-weight:600" data-act="editContact" data-id="${c.id}">${esc(c.club || '-')}</button></td><td style="font-weight:700">${esc(c.name)}</td><td>${esc(c.role || '-')}</td>
-        <td>${c.phone ? `<button class="lnk" dir="ltr" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}">${esc(c.phone)}</button>` : '-'}</td><td>${esc(c.age_group || '-')}</td></tr>`).join('')}
-    </tbody></table></div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
-    <div class="muted" style="font-size:12px">לחיצה על המספר: חיוג או וואטסאפ · לחיצה על המועדון: עריכה</div>
+    ${list.length ? `<div class="card" style="overflow:hidden">${list.map((c) => `<div class="row" style="align-items:center;gap:10px">
+      ${clubCrest(c.club, 36)}
+      <button style="flex:1;min-width:0;background:none;border:0;text-align:right;padding:0;color:inherit" data-act="editContact" data-id="${c.id}">
+        <div style="font-size:14px;font-weight:800;line-height:1.3">${esc(c.name)}${c.role ? ` <span style="font-weight:500;font-size:12px">· ${esc(c.role)}</span>` : ''}</div>
+        <div style="font-size:12px;line-height:1.35">${esc(c.club || '-')}</div>
+        <div class="muted" style="font-size:11px">${[c.age_group, c.league_level ? (c.league_level === 'אחר' ? '' : 'ליגת ') + c.league_level : ''].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</div>
+      </button>
+      ${c.phone ? `<button class="addbtn" style="width:auto;padding:0 10px;font-size:12px" dir="ltr" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}">📞 ${esc(c.phone)}</button>` : ''}
+    </div>`).join('')}</div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
+    <div class="muted" style="font-size:12px">לחיצה על המספר: חיוג או וואטסאפ · לחיצה על השם: עריכה</div>
   </div>`, { tab: 'contacts' });
   const inp = document.getElementById('cq');
   inp.oninput = () => { S.ui.cq = inp.value; clearTimeout(S._cqT); S._cqT = setTimeout(() => { render(); const i = document.getElementById('cq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
@@ -747,6 +760,7 @@ actions.editContact = (el) => {
     <label class="lbl">תפקיד<input class="field" name="role" value="${esc(c.role || '')}" placeholder="מאמן, מנהל מקצועי, יו״ר…"></label>
     <label class="lbl">מספר<input class="field" name="phone" type="tel" dir="ltr" value="${esc(c.phone || '')}"></label>
     <label class="lbl">גיל (שנתון)<input class="field" name="age_group" value="${esc(c.age_group || '')}" placeholder="נערים ב', נוער, בוגרים…"></label>
+    <label class="lbl">ליגה<select class="field" name="league_level"><option value="">—</option>${LEVELS.map((l) => `<option ${c.league_level === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <button class="btn" data-save>שמירה</button>
     ${c.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
   const fill = (name, phone, org, title) => {
@@ -756,7 +770,7 @@ actions.editContact = (el) => {
   const pick = m.querySelector('[data-pick]');
   if (pick) pick.onclick = async () => {
     if (!('contacts' in navigator && navigator.contacts.select)) {
-      alert('הטלפון עוד לא מאפשר לאפליקציה לגשת לאנשי הקשר.\n\nבאייפון: הגדרות ← אפליקציות ← Safari ← מתקדם ← Feature Flags ← להפעיל את "Contact Picker API", ואז לסגור ולפתוח את האפליקציה.\n\nאפשרות נוספת: בכרטיס איש הקשר בטלפון ← "שיתוף איש קשר" ← "שמירה בקבצים", ואז "ייבוא מכרטיס איש קשר".');
+      alert('הטלפון עוד לא מאפשר לאפליקציה לגשת לאנשי הקשר.\n\nבאייפון: הגדרות ← אפליקציות ← Safari ← מתקדם ← מאפייני דגל ← להפעיל את "Contact Picker API", ואז לסגור ולפתוח את האפליקציה.\n\nאפשרות נוספת: בכרטיס איש הקשר בטלפון ← "שיתוף איש קשר" ← "שמירה בקבצים", ואז "ייבוא מכרטיס איש קשר".');
       return;
     }
     try {
