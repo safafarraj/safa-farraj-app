@@ -363,6 +363,11 @@ class Sync:
             Alerts(self.db, self.now, self.notify).run()
         from .alerts import send_pushes
         pushed = send_pushes(self.db)
+        try:  # league level of new / edited contacts, from the IFA league lists
+            from .contact_leagues import ContactLeagues
+            ContactLeagues(self.db, self.client, SEASON_ID, log).run()
+        except Exception as e:
+            log(f"contact leagues failed: {e}")
         try:
             self.db.rpc("refresh_shirt_numbers", {"p_season": SEASON_ID})  # shirt number = the one he wears in games
         except Exception as e:

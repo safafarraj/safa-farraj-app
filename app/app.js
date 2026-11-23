@@ -765,7 +765,8 @@ actions.editContact = (el) => {
     <label class="lbl">תפקיד<input class="field" name="role" value="${esc(c.role || '')}" placeholder="מאמן, מנהל מקצועי, יו״ר…"></label>
     <label class="lbl">מספר<input class="field" name="phone" type="tel" dir="ltr" value="${esc(c.phone || '')}"></label>
     <label class="lbl">גיל (שנתון)<input class="field" name="age_group" value="${esc(c.age_group || '')}" placeholder="נערים ב', נוער, בוגרים…"></label>
-    <label class="lbl">ליגה<select class="field" name="league_level"><option value="">—</option>${LEVELS.map((l) => `<option ${c.league_level === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="lbl">ליגה<select class="field" name="league_level"><option value="" ${c.league_auto !== false ? 'selected' : ''}>אוטומטי לפי ההתאחדות${c.league_auto !== false && c.league_level ? ` (${esc(c.league_level)})` : ''}</option>${CONTACT_LEVELS.map((l) => `<option ${c.league_auto === false && c.league_level === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${c.league_name ? `<span class="muted" style="font-size:11px">${esc(c.league_name)}</span>` : ''}</label>
     <button class="btn" data-save>שמירה</button>
     ${c.id ? '<button class="btn2" data-del style="color:#E5484D">מחיקה</button>' : ''}`);
   const fill = (name, phone, org, title) => {
@@ -795,6 +796,9 @@ actions.editContact = (el) => {
   m.querySelector('[data-save]').onclick = async () => {
     const v = Object.fromEntries([...m.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim() || null]));
     if (!v.name) { alert('צריך שם'); return; }
+    // empty = automatic: the server checks the IFA leagues for this club + age group within ~10 minutes
+    if (v.league_level) { v.league_auto = false; v.league_name = null; }
+    else { v.league_auto = true; delete v.league_level; if (c.league_auto === false || v.club !== c.club || v.age_group !== c.age_group) { v.league_key = null; if (c.league_auto === false) v.league_level = null; } }
     const r = c.id ? await sb.from('network_contacts').update(v).eq('id', c.id) : await sb.from('network_contacts').insert(v);
     if (r.error) { alert('שמירה נכשלה'); return; }
     m.remove(); await loadCore(); render();
@@ -805,6 +809,7 @@ actions.editContact = (el) => {
 
 const OPEN_AGES = ['בוגרים', 'נוער', "נערים א'", "נערים ב'", "נערים ג'", "ילדים א'", "ילדים ב'", "ילדים ג'"];
 const LEVELS = ['על', 'לאומית', 'ארצית', 'אחר'];
+const CONTACT_LEVELS = ['על', 'לאומית', 'ארצית', 'אזורית'];
 route(/^\/openings$/, () => {
   const groups = [...new Set([...OPEN_AGES, ...S.openings.map((o) => o.age_group)])].filter((a) => S.openings.some((o) => o.age_group === a));
   shell('דרושים', `<div class="stack">
