@@ -670,29 +670,36 @@ const scheduleSeg = (aud) => `<div class="seg"><button class="${aud === 'mine' ?
 const dateCol = (g) => `<div style="width:52px;text-align:center;flex-shrink:0"><div class="num" style="font-size:22px;color:var(--lime);line-height:1">${fmtDate(g.game_date)}</div><div class="muted" style="font-size:10px">יום ${dayName(g.game_date)}</div><div style="font-size:13px;font-weight:800;margin-top:2px">${g.kickoff_time && g.kickoff_time.slice(0, 5) !== '00:00' ? g.kickoff_time.slice(0, 5) : '<span class="muted" style="font-size:10px;font-weight:600">שעה טרם נקבעה</span>'}</div></div>`;
 function myScheduleView() {
   const today = todayIso();
-  const games = S.games.filter((g) => S.myGames.has(g.id) && g.game_date >= today)
+  const picked = S.games.filter((g) => S.myGames.has(g.id) && g.game_date >= today)
     .sort((a, b) => (a.game_date + (a.kickoff_time || '')).localeCompare(b.game_date + (b.kickoff_time || '')));
-  const rows = games.map((g) => {
-    const ps = S.players.filter((p) => teamGames(p).some((x) => x.id === g.id));
-    const p0 = ps[0]; const v = p0 ? perspective(p0, g) : null;
+  // one row per game, even when it is stored once under each team
+  const groups = [];
+  for (const g of picked) if (!groups.some((x) => x.g.id === g.id || sameGame(x.g, g))) groups.push({ g, ids: S.games.filter((x) => x.id === g.id || sameGame(x, g)).map((x) => x.id) });
+  const rows = groups.map(({ g, ids }) => {
+    const ps = S.players.filter((p) => teamGames(p).some((x) => ids.includes(x.id)));
+    const p0 = ps[0];
+    const label = (p) => { const v = perspective(p, g); return `<b>${esc(p.name)}</b> <span style="font-weight:500">(${esc(v.home ? g.home_team : g.away_team)}, ${p.kind === 'tracked' ? 'מ' : 'ש'})</span>`; };
     return `<div class="row" style="align-items:center">
       ${dateCol(g)}
       <button style="flex:1;min-width:0;background:none;border:0;text-align:right;padding:0;color:inherit" data-act="game" data-p="${p0 ? p0.id : ''}" data-g="${g.id}">
-        <div class="ell" style="font-size:13px;font-weight:800">${esc(g.home_team)} – ${esc(g.away_team)}</div>
-        <div class="muted ell" style="font-size:11px">${esc(g.venue || 'מגרש טרם נקבע')} · ${g.competition === 'cup' ? 'גביע' : 'ליגה'}</div>
-        <div class="ell" style="font-size:11px;color:var(--lime)">${ps.map((p) => esc(p.name) + (p.kind === 'tracked' ? ' (מעקב)' : '')).join(', ')}</div>
+        <div style="font-size:13px;line-height:1.45">${ps.map(label).join('<br>')}</div>
+        <div class="ell" style="font-size:12px;margin-top:2px">${esc(g.home_team)} – ${esc(g.away_team)}</div>
+        <div class="muted ell" style="font-size:11px">${g.competition === 'cup' ? 'גביע' : 'ליגה'} · ${esc(g.venue || 'מגרש טרם נקבע')}</div>
       </button>
-      <span class="addbtn on" data-act="myToggle" data-g="${g.id}" role="button" aria-label="הסרה מהלוח שלי">✕</span>
+      <span class="addbtn on" data-act="myToggle" data-g="${ids.filter((i) => S.myGames.has(i)).join(',')}" role="button" aria-label="הסרה מהלוח שלי">✕</span>
     </div>`;
   }).join('');
   shell('לוח משחקים', `<div class="stack">
     ${scheduleSeg('my')}
     ${rows ? `<div class="card" style="overflow:hidden">${rows}</div>` : '<div class="card muted" style="padding:14px;font-size:14px;line-height:1.6">עדיין לא בחרת משחקים. בלשוניות "שחקנים שלי" ו"שחקנים במעקב" לוחצים על + ליד משחק כדי להוסיף אותו לכאן.</div>'}
     <div class="muted" style="font-size:12px">משחקים שעברו יורדים מהרשימה אוטומטית</div>
+    <div style="font-size:13px;font-weight:700;color:#FFD400">ש = שחקן שלי · מ = שחקן במעקב</div>
   </div>`, { tab: 'schedule' });
 }
 actions.myToggle = async (el) => {
-  const id = +el.dataset.g;
+  const all = String(el.dataset.g).split(',').map(Number);
+  if (all.length > 1) { for (const i of all) S.myGames.delete(i); await sb.from('my_games').delete().in('game_id', all); render(); return; }
+  const id = all[0];
   if (S.myGames.has(id)) { S.myGames.delete(id); await sb.from('my_games').delete().eq('game_id', id); }
   else { S.myGames.add(id); await sb.from('my_games').insert({ game_id: id }); }
   render();
