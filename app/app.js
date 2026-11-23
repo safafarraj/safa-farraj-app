@@ -16,17 +16,15 @@ const crestUrl = (teamId) => `/crests/${teamId}.png`;
 // crest by club name (free text) - only clubs we already hold a crest for
 const CLUB_CRESTS = [[/סכנין/, 4117], [/הפועל\s*חיפה/, 2169], [/שפרעם/, 3580], [/(קרי?ית|ק["״]|ק'')\s*ש(מונה)?/, 'kiryat-shmona'], [/הפ(ועל|')\s*עכו|^\s*עכו/, 'hapoel-akko']];
 // contacts grouped by club (same club = one after the other), clubs by name
-// league order: ליגת העל first
-const LEVEL_RANK = { 'על': 0, 'לאומית': 1, 'ארצית': 2, 'אזורית': 3, 'אחר': 4 };
-const levelRank = (l) => (l in LEVEL_RANK ? LEVEL_RANK[l] : 5);
-// contacts grouped by club (same club = one after the other); clubs ordered by their highest league, then name
+// clubs are ordered by the league of their senior (בוגרים) team: WINNER, לאומית, א', ב', ג', then unknown
+const seniorRank = (club) => { const r = (S.clubSeniors || {})[clubKey(club)]; return r == null ? 9 : r; };
+// contacts grouped by club (same club = one after the other)
 function clubGroups(list) {
   const key = (c) => (c || '').replace(/\s+/g, ' ').trim();
   const m = new Map();
   for (const c of list) { const k = key(c.club); if (!m.has(k)) m.set(k, []); m.get(k).push(c); }
-  const best = (cs) => Math.min(...cs.map((c) => levelRank(c.league_level)));
-  return [...m.entries()].sort((a, b) => best(a[1]) - best(b[1]) || (a[0] || 'תתת').localeCompare(b[0] || 'תתת', 'he'))
-    .map(([k, cs]) => [k, cs.sort((a, b) => levelRank(a.league_level) - levelRank(b.league_level) || (a.name || '').localeCompare(b.name || '', 'he'))]);
+  return [...m.entries()].sort((a, b) => seniorRank(a[0]) - seniorRank(b[0]) || (a[0] || 'תתת').localeCompare(b[0] || 'תתת', 'he'))
+    .map(([k, cs]) => [k, cs.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'))]);
 }
 // same normalisation as the club-crest server function
 const CLUB_ABBR = { 'ק"ש': 'קרית שמונה', 'ב"ש': 'באר שבע', 'ת"א': 'תל אביב', 'פ"ת': 'פתח תקווה', 'ר"ג': 'רמת גן', 'ראשל"צ': 'ראשון לציון', 'ק"ג': 'קרית גת', 'ק"א': 'קרית אתא', 'ק"ב': 'קרית ביאליק', 'ק"מ': 'קרית מוצקין', 'ק"י': 'קרית ים', 'נ"צ': 'נס ציונה', 'מ"א': 'מעלה אדומים', 'כ"ס': 'כפר סבא', 'ה"ש': 'הוד השרון', 'ר"ה': 'רמת השרון' };
@@ -97,7 +95,7 @@ async function fetchAll(make) {
   }
 }
 async function loadCore() {
-  const [p, l, g, gp, ps, nc, op, mg, cc, n] = await Promise.all([
+  const [p, l, g, gp, ps, nc, op, mg, cc, cs, n] = await Promise.all([
     sb.from('players').select('*').eq('active', true).order('id'),
     fetchAll(() => sb.from('leagues').select('*').order('id')),
     fetchAll(() => sb.from('games').select('*').order('game_date').order('kickoff_time', { nullsFirst: true }).order('id')),
@@ -107,10 +105,11 @@ async function loadCore() {
     sb.from('openings').select('*').order('created_at', { ascending: false }),
     sb.from('my_games').select('*'),
     sb.from('club_crests').select('key,image_url'),
+    sb.from('club_seniors').select('key,rank'),
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
-  S.contacts = nc.data || []; S.openings = op.data || []; S.clubCrests = Object.fromEntries((cc.data || []).map((x) => [x.key, x.image_url])); S.myGames = new Set((mg.data || []).map((x) => x.game_id));
+  S.contacts = nc.data || []; S.openings = op.data || []; S.clubCrests = Object.fromEntries((cc.data || []).map((x) => [x.key, x.image_url])); S.clubSeniors = Object.fromEntries((cs.data || []).map((x) => [x.key, x.rank])); S.myGames = new Set((mg.data || []).map((x) => x.game_id));
   S.players = p.data; S.games = g.data; S.gp = gp.data; S.seasons = ps.data;
   S.leaguesAll = l.data;
   S.leagues = Object.fromEntries(l.data.filter((x) => x.season_id === 28).map((x) => [x.ifa_league_id, x]));
@@ -866,7 +865,7 @@ route(/^\/openings$/, () => {
   shell('דרושים', `<div class="stack">
     <button class="btn" data-act="editOpening">+ דרוש חדש</button>
     ${groups.map((a) => `<p class="sec">${esc(a)}</p><div class="card" style="overflow-x:auto;padding:4px 8px"><table class="tbl"><thead><tr><th>מועדון</th><th>ליגה</th><th>תפקיד</th><th>איש קשר</th></tr></thead><tbody>
-      ${S.openings.filter((o) => o.age_group === a).sort((x, y) => levelRank(x.league_level) - levelRank(y.league_level) || (x.club || '').localeCompare(y.club || '', 'he')).map((o) => `<tr><td><button class="lnk" style="color:inherit;font-weight:700" data-act="editOpening" data-id="${o.id}">${esc(o.club)}</button></td><td>${esc(o.league_level || '-')}</td><td>${esc(o.role || '-')}</td>
+      ${S.openings.filter((o) => o.age_group === a).sort((x, y) => seniorRank(x.club) - seniorRank(y.club) || (x.club || '').localeCompare(y.club || '', 'he')).map((o) => `<tr><td><button class="lnk" style="color:inherit;font-weight:700" data-act="editOpening" data-id="${o.id}">${esc(o.club)}</button></td><td>${esc(o.league_level || '-')}</td><td>${esc(o.role || '-')}</td>
         <td>${o.contact_name || o.contact_phone ? `<button class="lnk" data-act="phone" data-name="${esc(o.contact_name || '')}" data-phone="${esc(o.contact_phone || '')}" data-sub="${esc(o.club)}">${esc(o.contact_name || o.contact_phone)}</button>` : '-'}</td></tr>`).join('')}
     </tbody></table></div>`).join('') || '<div class="card muted" style="padding:14px;font-size:14px">עדיין אין דרושים. לוחצים על "+ דרוש חדש".</div>'}
     <div class="muted" style="font-size:12px">לחיצה על איש הקשר: חיוג או וואטסאפ · לחיצה על המועדון: עריכה</div>

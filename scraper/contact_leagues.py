@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html as H
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 LEVELS = ("על", "לאומית", "ארצית")  # top first
@@ -16,6 +17,44 @@ ABBR = {'ק"ש': "קרית שמונה", 'ב"ש': "באר שבע", 'ת"א': "תל
         'ראשל"צ': "ראשון לציון", 'ק"ג': "קרית גת", 'ק"א': "קרית אתא", 'ק"ב': "קרית ביאליק", 'ק"מ': "קרית מוצקין",
         'ק"י': "קרית ים", 'נ"צ': "נס ציונה", 'ר"ל': "רמלה לוד", 'מ"א': "מעלה אדומים", 'כ"ס': "כפר סבא", 'ה"ש': "הוד השרון",
         'ר"ה': "רמת השרון", 'בת"י': "בת ים"}
+
+
+KEY_ABBR = {'ק"ש': "קרית שמונה", 'ב"ש': "באר שבע", 'ת"א': "תל אביב", 'פ"ת': "פתח תקווה", 'ר"ג': "רמת גן",
+            'ראשל"צ': "ראשון לציון", 'ק"ג': "קרית גת", 'ק"א': "קרית אתא", 'ק"ב': "קרית ביאליק", 'ק"מ': "קרית מוצקין",
+            'ק"י': "קרית ים", 'נ"צ': "נס ציונה", 'מ"א': "מעלה אדומים", 'כ"ס': "כפר סבא", 'ה"ש': "הוד השרון", 'ר"ה': "רמת השרון"}
+
+
+def club_key(s: str) -> str:
+    """Same as clubKey() in the app and keyOf() in the club-crest function."""
+    s = re.sub(r"[״“”]", '"', s or "")
+    s = re.sub(r"[׳’]", "'", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r'"?צו פיוס"?', " ", s)
+    for k, v in KEY_ABBR.items():
+        s = re.sub(rf"(^|\s){re.escape(k)}(?=\s|$)", lambda m: m.group(1) + v, s)
+    s = re.sub(r"(^|\s)הפ'\s*", r"\1הפועל ", s)
+    s = re.sub(r"(^|\s)מכ'\s*", r"\1מכבי ", s)
+    s = re.sub(r"(^|\s)(מ\.ס\.|מ\.כ\.|מ\.כדורגל|מועדון ספורט|מועדון כדורגל|F\.?C\.?)(?=\s|$)", " ", s)
+    s = re.sub(r"\s+", " ", s.replace("קריית", "קרית")).strip()
+    return re.sub(r"\s+", " ", re.sub(r"[\"'.\-–]", "", s)).strip()
+
+
+def senior_leagues(page_html: str, season_id: int) -> list[tuple[int, int, str]]:
+    """[(rank, league_id, name)] of the men's senior leagues: WINNER=0, לאומית=1, א'=2, ב'=3, ג'=4."""
+    out = []
+    for lid, txt in re.findall(rf'href="/leagues/league/\?league_id=(\d+)&(?:amp;)?season_id={season_id}"[^>]*>\s*(?:<span>)?([^<]+)<', page_html):
+        name = re.sub(r"\s+", " ", H.unescape(txt)).strip()
+        if "WINNER" in name:
+            rank = 0
+        elif name == "ליגה לאומית":
+            rank = 1
+        else:
+            m = re.match(r"ליגה ([אבג])'", name)
+            if not m:
+                continue
+            rank = {"א": 2, "ב": 3, "ג": 4}[m.group(1)]
+        out.append((rank, int(lid), name))
+    return sorted(set(out))
 
 
 def norm_age(s: str) -> Optional[str]:
@@ -93,6 +132,10 @@ class ContactLeagues:
         self.db, self.client, self.sid, self.log = db, client, season_id, log
         self._menu = None
         self._teams: dict[int, list[str]] = {}
+        self._senior = None
+        # a club's senior league is re-checked once a season (season starts in August)
+        now = datetime.now(timezone.utc)
+        self.season_start = datetime(now.year if now.month >= 8 else now.year - 1, 8, 1, tzinfo=timezone.utc).isoformat()
 
     def menu(self):
         if self._menu is None:
@@ -117,7 +160,38 @@ class ContactLeagues:
                     return level, name
         return "אזורית", None
 
+    def senior(self, club: str) -> tuple[Optional[int], Optional[str]]:
+        if self._senior is None:
+            self._senior = senior_leagues(self.client.get(f"/leagues/league/?league_id=40&season_id={self.sid}"), self.sid)
+        for rank, lid, name in self._senior:
+            if any(club_matches(club, t) for t in self.teams(lid)):
+                return rank, name
+        return None, None
+
+    def run_seniors(self) -> None:
+        """League of each club's senior team (orders the contacts list). Once per club and season."""
+        clubs = {c["club"] for c in self.db.select("network_contacts", "select=club") if c.get("club")}
+        clubs |= {c["club"] for c in self.db.select("openings", "select=club") if c.get("club")}
+        known = {r["key"]: r for r in self.db.select("club_seniors", "select=key,checked_at")}
+        for club in sorted(clubs):
+            k = club_key(club)
+            if not k or (k in known and known[k]["checked_at"] >= self.season_start):
+                continue
+            try:
+                rank, name = self.senior(club)
+            except Exception as e:
+                self.log(f"senior league {club}: {e}")
+                continue
+            self.db.upsert("club_seniors", {"key": k, "club": club, "rank": rank, "league_name": name,
+                                            "checked_at": datetime.now(timezone.utc).isoformat()}, "key", returning=False)
+            known[k] = {"checked_at": "9999"}
+            self.log(f"senior team {club} -> {name}")
+
     def run(self) -> None:
+        try:
+            self.run_seniors()
+        except Exception as e:
+            self.log(f"senior leagues failed: {e}")
         rows = self.db.select("network_contacts", "select=id,club,age_group,league_level,league_auto,league_key")
         for c in rows:
             if c.get("league_auto") is False or not c.get("club") or not c.get("age_group"):
