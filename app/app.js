@@ -744,15 +744,16 @@ route(/^\/contacts$/, () => {
   const list = S.contacts.filter((c) => !q || [c.club, c.name, c.role, c.age_group, c.league_level, c.phone].some((x) => (x || '').includes(q)));
   shell('אנשי קשר', `<div class="stack">
     <div style="display:flex;gap:8px"><input class="field" id="cq" placeholder="חיפוש: מועדון, שם, תפקיד…" value="${esc(q)}" style="flex:1"><button class="btn" style="width:auto;padding:0 16px" data-act="editContact">+ הוספה</button></div>
-    ${list.length ? clubGroups(list).map(([club, cs]) => `<div class="card" style="overflow:hidden;padding:0">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)">${clubCrest(club, 30)}<div style="font-size:15px;font-weight:800">${esc(club || 'ללא מועדון')}</div></div>
-      <div class="cgrid cghead"><span>שם</span><span>תפקיד</span><span>גיל</span><span>ליגה</span><span></span></div>
-      ${cs.map((c) => `<div class="cgrid">
-        <button class="ell" style="font-weight:800" data-act="editContact" data-id="${c.id}">${esc(c.name)}</button>
-        <span class="ell">${esc(c.role || '-')}</span><span class="ell">${esc(c.age_group || '-')}</span><span class="ell">${esc(c.league_level || '-')}</span>
-        ${c.phone ? `<button class="cphone" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}" aria-label="חיוג">📞</button>` : '<span></span>'}
-      </div>`).join('')}</div>`).join('') : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
-    <div class="muted" style="font-size:12px">📞 חיוג או וואטסאפ · לחיצה על השם: עריכה</div>
+    ${list.length ? `<div class="card" style="overflow:hidden">${clubGroups(list).flatMap(([, cs]) => cs).map((c) => `<div class="row" style="align-items:center;gap:10px">
+      ${clubCrest(c.club, 36)}
+      <button style="flex:1;min-width:0;background:none;border:0;text-align:right;padding:0;color:inherit" data-act="editContact" data-id="${c.id}">
+        <div style="font-size:14px;font-weight:800;line-height:1.3">${esc(c.name)}${c.role ? ` <span style="font-weight:500;font-size:12px">· ${esc(c.role)}</span>` : ''}</div>
+        <div style="font-size:12px;line-height:1.35">${esc(c.club || '-')}</div>
+        <div class="muted" style="font-size:11px">${[c.age_group, c.league_level ? (c.league_level === 'אחר' ? '' : 'ליגת ') + c.league_level : ''].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</div>
+      </button>
+      ${c.phone ? `<button class="addbtn" style="width:auto;padding:0 10px;font-size:12px" dir="ltr" data-act="phone" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}" data-sub="${esc([c.role, c.club].filter(Boolean).join(' · '))}">📞 ${esc(c.phone)}</button>` : ''}
+    </div>`).join('')}</div>` : `<div class="card muted" style="padding:14px;font-size:14px">${q ? 'לא נמצאו אנשי קשר.' : 'עדיין אין אנשי קשר. לוחצים על "+ הוספה".'}</div>`}
+    <div class="muted" style="font-size:12px">לחיצה על המספר: חיוג או וואטסאפ · לחיצה על השם: עריכה</div>
   </div>`, { tab: 'contacts' });
   const inp = document.getElementById('cq');
   inp.oninput = () => { S.ui.cq = inp.value; clearTimeout(S._cqT); S._cqT = setTimeout(() => { render(); const i = document.getElementById('cq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
