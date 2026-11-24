@@ -136,8 +136,8 @@ class Sync:
                     lg["game_length_min"] = length
             self.db.update("leagues", f"ifa_league_id=eq.{league_id}&season_id=eq.{SEASON_ID}", vals)
 
-        # replace not-yet-numbered future fixtures, then upsert everything
-        self.db.delete("games", f"ifa_team_id=eq.{team_id}&ifa_game_id=is.null&status=eq.scheduled")
+        # upsert everything (keeps row ids, so the agent's "my schedule" picks survive), then drop
+        # not-yet-numbered fixtures that disappeared from the team's schedule
         with_id, without_id = [], []
         for r in sched:
             if r.is_bye or not r.game_date:
@@ -150,8 +150,23 @@ class Sync:
                 with_id.append(row)
             else:
                 without_id.append(row)
+        nk = lambda r: (r["game_date"], r["home_team"], r["away_team"])
+        unnumbered = {nk(g): g["id"] for g in self.db.select(
+            "games", f"ifa_team_id=eq.{team_id}&season_id=eq.{SEASON_ID}&ifa_game_id=is.null&select=id,game_date,home_team,away_team")}
+        # a fixture that just got its IFA number: give the number to the existing row (same id)
+        for r in with_id:
+            gid = unnumbered.pop(nk(r), None)
+            if gid:
+                try:
+                    self.db.update("games", f"id=eq.{gid}", {"ifa_game_id": r["ifa_game_id"]})
+                except Exception:  # the numbered game is already stored: drop the duplicate
+                    self.db.delete("games", f"id=eq.{gid}")
         self.db.upsert("games", with_id, "ifa_game_id", returning=False)
         self.db.upsert("games", without_id, "ifa_team_id,game_date,home_team,away_team", returning=False)
+        keep = {nk(r) for r in without_id}
+        for key, gid in unnumbered.items():  # fixtures that left the schedule (moved / cancelled)
+            if key not in keep:
+                self.db.delete("games", f"id=eq.{gid}&status=eq.scheduled")
         log(f"team schedule: {len(sched)} rows, standings: {len(standings)} teams")
         return sched
 

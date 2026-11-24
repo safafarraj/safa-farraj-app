@@ -109,8 +109,15 @@ async function loadCore() {
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
   ]);
   for (const r of [p, l, g, gp, ps]) if (r.error) throw r.error;
-  S.contacts = nc.data || []; S.openings = op.data || []; S.clubCrests = Object.fromEntries((cc.data || []).map((x) => [x.key, x.image_url])); S.clubSeniors = Object.fromEntries((cs.data || []).map((x) => [x.key, x.rank])); S.myGames = new Set((mg.data || []).map((x) => x.game_id));
+  S.contacts = nc.data || []; S.openings = op.data || []; S.clubCrests = Object.fromEntries((cc.data || []).map((x) => [x.key, x.image_url])); S.clubSeniors = Object.fromEntries((cs.data || []).map((x) => [x.key, x.rank])); S.myPicks = mg.data || [];
   S.players = p.data; S.games = g.data; S.gp = gp.data; S.seasons = ps.data;
+  // "my schedule" picks: by game id, or by date + teams if the game was re-saved under a new id
+  S.myGames = new Set();
+  for (const pk of S.myPicks) {
+    if (pk.game_id && S.games.some((x) => x.id === pk.game_id)) { S.myGames.add(pk.game_id); continue; }
+    const g2 = pk.game_date && S.games.find((x) => x.game_date === pk.game_date && x.home_team === pk.home_team && x.away_team === pk.away_team && !S.myGames.has(x.id));
+    if (g2) { S.myGames.add(g2.id); sb.from('my_games').update({ game_id: g2.id }).eq('id', pk.id).then(() => {}); }
+  }
   S.leaguesAll = l.data;
   S.leagues = Object.fromEntries(l.data.filter((x) => x.season_id === 28).map((x) => [x.ifa_league_id, x]));
   for (const k in _ourName) delete _ourName[k];
@@ -760,8 +767,9 @@ actions.myToggle = async (el) => {
   const all = String(el.dataset.g).split(',').map(Number);
   if (all.length > 1) { for (const i of all) S.myGames.delete(i); await sb.from('my_games').delete().in('game_id', all); render(); return; }
   const id = all[0];
+  const g = S.games.find((x) => x.id === id) || {};
   if (S.myGames.has(id)) { S.myGames.delete(id); await sb.from('my_games').delete().eq('game_id', id); }
-  else { S.myGames.add(id); await sb.from('my_games').insert({ game_id: id }); }
+  else { S.myGames.add(id); await sb.from('my_games').insert({ game_id: id, game_date: g.game_date, home_team: g.home_team, away_team: g.away_team }); }
   render();
 };
 
