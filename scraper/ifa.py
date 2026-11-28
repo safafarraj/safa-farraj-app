@@ -73,6 +73,10 @@ class IFAClient:
     def league_page(self, league_id: int, season_id: int) -> str:
         return self.get(f"/leagues/league/?league_id={league_id}&season_id={season_id}")
 
+    def league_table(self, league_id: int, season_id: int, box: str, round_id: str) -> str:
+        return self.get(f"/Components.asmx/LeagueTable?league_id={league_id}&season_id={season_id}"
+                        f"&box={box}&round_id={round_id}&componentTitle=%D7%98%D7%91%D7%9C%D7%94")
+
     def game_page(self, game_id: int, season_id: int) -> str:
         return self.get(f"/leagues/games/game/?season_id={season_id}&game_id={game_id}")
 
@@ -258,7 +262,7 @@ def parse_standings(html: str) -> list[dict]:
         if len(cols) < 8:
             continue
         labels = [_text(c.select_one(".sr-only"), strip_sr=False) if c.select_one(".sr-only") else "" for c in cols]
-        if not labels or labels[0] != "מקום":
+        if not labels or labels[0] not in ("מקום", "מיקום"):
             continue
         vals = [_text(c) for c in cols]
         link = row if row.name == "a" else (row.find_parent("a") or row.select_one("a[href]"))
@@ -273,6 +277,20 @@ def parse_standings(html: str) -> list[dict]:
             "team_id": _qs(team_href, "team_id"),
         })
     return table
+
+
+def league_table_params(league_html: str) -> Optional[tuple[str, str]]:
+    """Some leagues load their table separately: <section class='... league-standing-table' data-table-index='40' data-table-round='12'>."""
+    m = re.search(r"league-standing-table'[^>]*data-table-index='(\d+)'[^>]*data-table-round='(\d+)'", league_html) \
+        or re.search(r'league-standing-table"[^>]*data-table-index="(\d+)"[^>]*data-table-round="(\d+)"', league_html)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def parse_league_table_xml(xml: str) -> list[dict]:
+    """Components.asmx/LeagueTable answers XML whose <HtmlData> holds the table HTML (escaped)."""
+    import html as _h
+    m = re.search(r"<HtmlData>(.*?)</HtmlData>", xml, re.S)
+    return parse_standings(_h.unescape(m.group(1))) if m else []
 
 
 def parse_game_length(html: str) -> Optional[int]:

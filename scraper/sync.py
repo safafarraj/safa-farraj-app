@@ -126,6 +126,15 @@ class Sync:
     def sync_team(self, team_id: int, league_id: Optional[int]) -> list[ifa.ScheduleRow]:
         sched = ifa.parse_team_games(self.client.team_games(team_id, SEASON_ID))
         standings = ifa.parse_standings(self.client.team_page(team_id, SEASON_ID))
+        if not standings and league_id:
+            # some leagues (e.g. נערים ג' על) load the table separately after the page opens
+            try:
+                params = ifa.league_table_params(self.client.league_page(league_id, SEASON_ID))
+                if params:
+                    standings = ifa.parse_league_table_xml(self.client.league_table(league_id, SEASON_ID, *params))
+                    log(f"league {league_id}: table from LeagueTable ({len(standings)} teams)")
+            except Exception as e:
+                log(f"league {league_id}: LeagueTable failed: {e}")
         if league_id:
             vals = {"standings": standings, "updated_at": datetime.utcnow().isoformat()}
             lg = self.leagues.get(league_id)
