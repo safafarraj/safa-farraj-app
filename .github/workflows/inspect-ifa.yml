@@ -1,0 +1,45 @@
+name: Inspect IFA page
+# Manual diagnostics: reads one football.org.il page through the Israeli proxy and prints
+# how the scraper parses it (standings) plus the text around a search phrase.
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: "path on football.org.il, e.g. /team-details/?season_id=28&team_id=2169"
+        required: true
+      find:
+        description: "phrase to show context for"
+        required: false
+        default: "מקום"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r scraper/requirements.txt
+      - env:
+          IL_PROXY: ${{ secrets.IL_PROXY }}
+          P: ${{ inputs.path }}
+          F: ${{ inputs.find }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from scraper import ifa
+          p = os.environ["P"]
+          assert p.startswith("/") and "//" not in p, "path only"
+          c = ifa.IFAClient()
+          h = c.get(p)
+          print("bytes", len(h))
+          st = ifa.parse_standings(h)
+          print("standings rows:", len(st))
+          for r in st[:20]: print(r)
+          f = os.environ.get("F") or "מקום"
+          idx = [m.start() for m in re.finditer(re.escape(f), h)][:6]
+          print("matches for", f, ":", len(idx))
+          for i in idx[:3]:
+              print("-----"); print(re.sub(r"\s+", " ", h[max(0, i-1500): i+1500]))
+          print("table_row count:", h.count("table_row"), "| table_col:", h.count("table_col"))
+          PY
