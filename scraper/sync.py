@@ -74,6 +74,12 @@ class Sync:
                 if prof.team_name != p.get("team_name") or not p.get("ifa_team_id"):
                     upd.update(self.resolve_team(p, prof))
                 upd["team_name"], upd["league_name"] = prof.team_name, prof.league_name
+                # a player registered twice (e.g. "דיר חנא (נער.ג צפון), דיר חנא (ילד.א צפון 1)"):
+                # the league is the one of the team he actually plays for
+                lid = upd.get("ifa_league_id") or p.get("ifa_league_id")
+                lgn = (self.leagues.get(lid) or {}).get("name") if lid else None
+                if lgn:
+                    upd["league_name"] = lgn
             self.db.update("players", f"id=eq.{p['id']}", upd)
             p.update(upd)
 
@@ -111,8 +117,9 @@ class Sync:
         if league_id:
             out["ifa_league_id"] = league_id
             if league_id not in self.leagues:
-                length = ifa.parse_game_length(self.client.league_page(league_id, SEASON_ID))
-                row = {"ifa_league_id": league_id, "season_id": SEASON_ID, "name": prof.league_name,
+                lhtml = self.client.league_page(league_id, SEASON_ID)
+                length = ifa.parse_game_length(lhtml)
+                row = {"ifa_league_id": league_id, "season_id": SEASON_ID, "name": ifa.parse_league_title(lhtml) or prof.league_name,
                        "game_length_min": length, "updated_at": datetime.utcnow().isoformat()}
                 self.db.upsert("leagues", row, "ifa_league_id,season_id", returning=False)
                 self.leagues[league_id] = row
@@ -139,10 +146,15 @@ class Sync:
             vals = {"standings": standings, "updated_at": datetime.utcnow().isoformat()}
             lg = self.leagues.get(league_id)
             if lg and (self.full or not lg.get("game_length_min")):
-                length = ifa.parse_game_length(self.client.league_page(league_id, SEASON_ID))
+                lhtml = self.client.league_page(league_id, SEASON_ID)
+                length = ifa.parse_game_length(lhtml)
                 if length:
                     vals["game_length_min"] = length
                     lg["game_length_min"] = length
+                title = ifa.parse_league_title(lhtml)
+                if title:  # the official name (a player's own page may show another registration)
+                    vals["name"] = title
+                    lg["name"] = title
             self.db.update("leagues", f"ifa_league_id=eq.{league_id}&season_id=eq.{SEASON_ID}", vals)
 
         # upsert everything (keeps row ids, so the agent's "my schedule" picks survive), then drop

@@ -279,6 +279,16 @@ def parse_standings(html: str) -> list[dict]:
     return table
 
 
+def parse_league_title(league_html: str) -> Optional[str]:
+    """League page heading, e.g. <span class='big'>ליגת נערים ג' צפון</span> -> "נערים ג' צפון"."""
+    import html as _h
+    m = re.search(r"<span class=['\"]big['\"]>([^<]+)</span>", league_html)
+    if not m:
+        return None
+    t = re.sub(r"\s+", " ", _h.unescape(m.group(1))).strip()
+    return re.sub(r"^ליגת\s+(?!העל|WINNER)", "", t) or None
+
+
 def league_table_params(league_html: str) -> Optional[tuple[str, str]]:
     """Some leagues load their table separately: <section class='... league-standing-table' data-table-index='40' data-table-round='12'>."""
     m = re.search(r"league-standing-table'[^>]*data-table-index='(\d+)'[^>]*data-table-round='(\d+)'", league_html) \
