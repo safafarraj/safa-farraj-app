@@ -42,4 +42,12 @@ jobs:
           for i in idx[:3]:
               print("-----"); print(re.sub(r"\s+", " ", h[max(0, i-1500): i+1500]))
           print("table_row count:", h.count("table_row"), "| table_col:", h.count("table_col"))
+          print("scripts:", sorted(set(re.findall(r'<script[^>]*src="([^"]+)"', h)))[:40])
+          for kw in ["ajax", "fetch(", "Components.asmx", "GetLeague", "Table", "standing", "__doPostBack", "api/"]:
+              hits = [m.start() for m in re.finditer(re.escape(kw), h)]
+              print("KW", kw, len(hits))
+              for i in hits[:2]:
+                  print("   ", re.sub(r"\s+", " ", h[max(0, i-200): i+300]))
+          for k, v in re.findall(r'<input[^>]*name="([^"]+)"[^>]*value="([^"]{0,60})', h)[:30]:
+              print("INPUT", k, v)
           PY
